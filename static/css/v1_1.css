@@ -1,0 +1,295 @@
+/* =====================================================================
+   Atlas Pharma QMS — V1.1 Redesign Override Styles
+   ===================================================================== */
+
+/* ── Full Page Hero ──────────────────────────────────────────────────────────── */
+.hero-full {
+    height: 100vh;
+    min-height: 600px;
+    background: linear-gradient(rgba(0, 86, 179, 0.8), rgba(0, 29, 61, 0.9)), url('https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&w=1920&q=80') center/cover no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 20px;
+    color: white;
+}
+
+.hero-full-content {
+    max-width: 800px;
+}
+
+.hero-full h1 {
+    font-size: 4rem;
+    font-weight: 800;
+    margin-bottom: 20px;
+    color: #fff;
+    letter-spacing: -1px;
+}
+
+.hero-tagline {
+    font-size: 1.3rem;
+    font-weight: 400;
+    line-height: 1.6;
+    margin-bottom: 40px;
+    color: rgba(255,255,255,0.9);
+}
+
+.hero-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.hero-actions .btn-secondary {
+    background: transparent;
+    color: white;
+    border: 2px solid white;
+}
+.hero-actions .btn-secondary:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* ── Home Page Sections ───────────────────────────────────────────── */
+.section-block {
+    padding: 80px 0;
+}
+.bg-white { background: #fff; }
+.bg-light { background: #f4f6fa; }
+
+.card-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    margin-bottom: 20px;
+}
+
+.ta-card {
+    padding: 0;
+    overflow: hidden;
+}
+.ta-img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-bottom: 1px solid #e8edf2;
+}
+.ta-card .card-icon {
+    margin-top: 20px;
+}
+.ta-card h3 {
+    margin: 0 20px 10px;
+}
+.ta-card p {
+    margin: 0 20px 30px;
+}
+
+.quality-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+}
+.quality-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 24px 0;
+}
+.quality-list li {
+    margin-bottom: 16px;
+    font-size: 1.05rem;
+    color: #444;
+    padding-left: 28px;
+    position: relative;
+}
+.quality-list li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: #28a745;
+    font-weight: bold;
+    font-size: 1.2rem;
+}
+.rounded-image {
+    border-radius: 16px;
+    width: 100%;
+    height: auto;
+}
+.shadow-lg {
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+@media (max-width: 768px) {
+    .quality-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── Catalog E-commerce Layout ───────────────────────────────────────────── */
+.catalog-header {
+    background: linear-gradient(135deg, #0056b3, #003d80);
+    padding: 40px 0;
+    color: white;
+    margin-bottom: 40px;
+}
+.catalog-header h1 {
+    color: white;
+    margin-bottom: 10px;
+}
+.catalog-header p {
+    color: rgba(255,255,255,0.8);
+    font-size: 1.1rem;
+}
+
+.catalog-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 40px;
+    align-items: start;
+}
+@media (max-width: 900px) {
+    .catalog-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.filter-box {
+    background: #fff;
+    border: 1px solid #e8edf2;
+    border-radius: 12px;
+    padding: 24px;
+    position: sticky;
+    top: 90px;
+}
+.filter-title {
+    font-size: 1.2rem;
+    margin-bottom: 20px;
+    color: #1a1a2e;
+    border-bottom: 1px solid #e8edf2;
+    padding-bottom: 10px;
+}
+.filter-group {
+    margin-bottom: 24px;
+}
+.filter-group h4 {
+    font-size: 0.95rem;
+    color: #666;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.filter-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    color: #444;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.ecommerce-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+}
+
+.ecommerce-card {
+    background: #fff;
+    border: 1px solid #e8edf2;
+    border-radius: 16px;
+    overflow: hidden;
+    transition: transform 0.25s, box-shadow 0.25s;
+    display: flex;
+    flex-direction: column;
+}
+.ecommerce-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.06);
+}
+
+.card-image-wrapper {
+    position: relative;
+    height: 220px;
+    width: 100%;
+}
+.card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.ecommerce-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: #e8f5e9;
+    color: #2e7d32;
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+.card-body h3 {
+    font-size: 1.15rem;
+    margin-bottom: 8px;
+    color: #0056b3;
+}
+.card-desc {
+    font-size: 0.9rem;
+    color: #666;
+    line-height: 1.5;
+    margin-bottom: 20px;
+    flex-grow: 1;
+}
+
+.card-footer {
+    margin-top: auto;
+}
+.card-footer .btn {
+    width: 100%;
+    justify-content: center;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 0.95rem;
+}
+
+.specs-details {
+    margin-top: 12px;
+}
+.specs-details summary {
+    font-size: 0.85rem;
+    color: #555;
+    cursor: pointer;
+    text-align: center;
+    font-weight: 500;
+    padding: 6px;
+    border-radius: 5px;
+    transition: background 0.2s;
+}
+.specs-details summary:hover {
+    background: #f0f5ff;
+    color: #0056b3;
+}
+.specs-content {
+    background: #f8faff;
+    border: 1px solid #e8edf2;
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: #555;
+}
+.specs-content p {
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+}
