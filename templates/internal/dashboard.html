@@ -1,0 +1,165 @@
+{% extends "base_internal.html" %}
+{% block title %}Dashboard — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar" style="justify-content: space-between; display: flex; align-items: center;">
+    <div>
+        <h1>📊 Executive Dashboard</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Real-time quality metrics overview.</p>
+    </div>
+    
+    <!-- Time Filter -->
+    <div>
+        <form method="GET" action="/portal/dashboard" style="display: flex; gap: 8px; align-items: center;">
+            <label for="monthSelect" style="font-size: 0.85rem; color: #555; font-weight: 600;">Time Period:</label>
+            <select name="month" id="monthSelect" class="form-control" style="width: auto; padding: 4px 8px;" onchange="this.form.submit()">
+                <option value="All Time" {% if selected_month == 'All Time' %}selected{% endif %}>All Time</option>
+                {% for m in available_months %}
+                <option value="{{ m }}" {% if selected_month == m %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+    <div class="kpi-card blue">
+        <div class="kpi-value" style="display: flex; align-items: baseline; gap: 8px;">
+            {{ kpis.selected_period }}
+            <span style="font-size: 1rem; color: #888; font-weight: 500;">/ {{ kpis.total_all_time }}</span>
+        </div>
+        <div class="kpi-label">Tickets ({% if selected_month == 'All Time' %}All Time{% else %}This Month{% endif %})</div>
+    </div>
+    <div class="kpi-card red">
+        <div class="kpi-value">{{ kpis.open }}</div>
+        <div class="kpi-label">Open</div>
+    </div>
+    <div class="kpi-card orange">
+        <div class="kpi-value">{{ kpis.claimed }}</div>
+        <div class="kpi-label">Claimed</div>
+    </div>
+    <div class="kpi-card green">
+        <div class="kpi-value">{{ kpis.resolved }}</div>
+        <div class="kpi-label">Resolved</div>
+    </div>
+</div>
+
+<!-- Time Series Chart -->
+<div class="chart-card" style="margin-bottom: 24px;">
+    <h3>Issue Volume Over Time</h3>
+    <div id="trendLineChart" style="height: 350px;"></div>
+</div>
+
+<!-- Charts -->
+<div class="charts-row">
+    <div class="chart-card">
+        <h3>AI Categorization Breakdown</h3>
+        <div id="catPieChart"></div>
+    </div>
+    <div class="chart-card">
+        <h3>Ticket Status Overview</h3>
+        <div id="statusBarChart"></div>
+    </div>
+</div>
+
+<div class="card" style="padding: 24px;">
+    <h3 style="color: #333; margin-bottom: 16px; font-size: 1rem;">Latest Reviews</h3>
+    {% if recent_reviews %}
+    <div style="overflow-x: auto;">
+        <table class="specs-table" style="margin: 0;">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Batch #</th>
+                    <th>Product</th>
+                    <th>AI Category</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in recent_reviews %}
+                <tr>
+                    <td>#{{ r.id }}</td>
+                    <td>{{ r.batch_number }}</td>
+                    <td>{{ r.product_type }}</td>
+                    <td>
+                        <span class="tag tag-{{ r.ai_category|lower }}">{{ r.ai_category }}</span>
+                    </td>
+                    <td>
+                        <span class="tag tag-{{ r.status|lower }}">{{ r.status }}</span>
+                    </td>
+                    <td>{{ r.created_at[:10] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info" style="margin: 0;">No reviews submitted yet.</div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <script type="application/json" id="catDataJson">{{ cat_data | tojson | safe }}</script>
+    <script type="application/json" id="statusDataJson">{{ status_data | tojson | safe }}</script>
+    <script type="application/json" id="trendDataJson">{{ trend_data_json | safe }}</script>
+
+    <script>
+        // Minimal plotly implementations for dashboard
+        const catData = JSON.parse(document.getElementById('catDataJson').textContent);
+        const statusData = JSON.parse(document.getElementById('statusDataJson').textContent);
+        const trendData = JSON.parse(document.getElementById('trendDataJson').textContent);
+
+    // Pie Chart
+    if (Object.keys(catData).length > 0) {
+        const labels = Object.keys(catData);
+        const values = Object.values(catData);
+        const colors = labels.map(l => l === 'Critical' ? '#dc3545' : l === 'Major' ? '#fd7e14' : l === 'Minor' ? '#ffc107' : '#6c757d');
+        
+        Plotly.newPlot('catPieChart', [{
+            values: values,
+            labels: labels,
+            type: 'pie',
+            hole: 0.45,
+            marker: { colors: colors }
+        }], {
+            margin: { t: 20, b: 20, l: 20, r: 20 },
+            showlegend: true,
+            legend: { orientation: 'h', y: -0.1 }
+        }, {displayModeBar: false});
+    }
+
+    // Bar Chart
+    if (Object.keys(statusData).length > 0) {
+        const labels = Object.keys(statusData);
+        const values = Object.values(statusData);
+        const colors = labels.map(l => l === 'Open' ? '#dc3545' : l === 'Claimed' ? '#fd7e14' : '#28a745');
+        
+        Plotly.newPlot('statusBarChart', [{
+            x: labels,
+            y: values,
+            type: 'bar',
+            marker: { color: colors }
+        }], {
+            margin: { t: 20, b: 20, l: 20, r: 20 }
+        }, {displayModeBar: false});
+    }
+
+    // Trend Line Chart
+    if (trendData && trendData.length > 0) {
+        Plotly.newPlot('trendLineChart', trendData, {
+            margin: { t: 20, b: 40, l: 40, r: 20 },
+            showlegend: true,
+            legend: { orientation: 'h', y: -0.15 },
+            xaxis: { title: 'Date', type: 'category' },
+            yaxis: { title: 'Review Count' }
+        }, {displayModeBar: false});
+    } else {
+        document.getElementById('trendLineChart').innerHTML = '<div class="alert alert-info" style="margin: 20px;">Not enough time-series data to plot trends for this period.</div>';
+    }
+</script>
+{% endblock %}

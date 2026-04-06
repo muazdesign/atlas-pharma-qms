@@ -1,0 +1,31 @@
+{% extends "base_public.html" %}
+{% block title %}Staff Login — Atlas Pharma{% endblock %}
+
+{% block content %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="login-header">
+            <div class="icon">🔐</div>
+            <h2>Staff Portal</h2>
+            <p>Internal access for authorized personnel only.</p>
+        </div>
+        <div class="login-body">
+            <form method="POST" action="/login">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" class="form-control" id="username" name="username" placeholder="Enter your username" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" style="margin-top: 10px;">🔑 Sign In</button>
+            </form>
+        </div>
+        <div class="login-footer">
+            This portal is restricted to Atlas Pharma employees.<br>
+            If you need access, contact your system administrator.
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,124 @@
+{% extends "base_internal.html" %}
+{% block title %}Employee Directory — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>👥 Employee Directory & Live Tracker</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Manage staff accounts and track real-time active work.</p>
+    </div>
+</div>
+
+<div class="form-row">
+    <!-- Active Work Tracker -->
+    <div class="card">
+        <h3 style="color: #0056b3; margin-bottom: 24px;">📡 Live Operations Tracker</h3>
+        <p style="font-size: 0.85rem; color: #666; margin-bottom: 16px;">Currently active workload for all Quality Managers.</p>
+        
+        <table class="specs-table" style="margin: 0;">
+            <thead>
+                <tr>
+                    <th>Quality Manager</th>
+                    <th>Current Status</th>
+                    <th>Active Tickets</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for qm, tickets in live_ops.items() %}
+                <tr>
+                    <td style="font-weight: 600; color: #333;">{{ qm }}</td>
+                    <td>
+                        {% if tickets %}
+                        <span class="tag tag-claimed">In Progress</span>
+                        {% else %}
+                        <span class="tag tag-resolved">Available</span>
+                        {% endif %}
+                    </td>
+                    <td style="color: #555;">
+                        {% if tickets %}
+                            {% for t in tickets %}
+                            <span style="background: #f0f2f5; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 4px;">#{{ t }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span style="color: #999; font-style: italic;">No active assignments</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Create User Form -->
+    <div class="card">
+        <h3 style="color: #0056b3; margin-bottom: 24px;">Add New Employee</h3>
+        <form method="POST" action="/portal/staff">
+            <div class="form-group">
+                <label for="full_name">Full Name</label>
+                <input type="text" class="form-control" name="full_name" required placeholder="e.g. John Doe">
+            </div>
+            <div class="form-group">
+                <label for="role">Role</label>
+                <select class="form-control" name="role" required>
+                    <option value="Quality Manager">Quality Manager</option>
+                    <option value="Executive">Executive</option>
+                    <option value="Admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" class="form-control" name="username" required placeholder="e.g. jdoe">
+            </div>
+            <div class="form-group">
+                <label for="password">Temp Password</label>
+                <input type="password" class="form-control" name="password" required placeholder="Assign a secure password">
+            </div>
+            <button class="btn btn-primary btn-block mt-20" type="submit">➕ Add Employee</button>
+        </form>
+    </div>
+</div>
+
+<!-- Employee Directory Table -->
+<div class="card mt-20" style="padding: 24px;">
+    <h3 style="color: #333; margin-bottom: 16px;">Directory List</h3>
+    <table class="specs-table" style="margin: 0;">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Full Name</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th style="text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td style="color: #777;">#{{ u.id }}</td>
+                <td style="font-weight: 600;">{{ u.full_name }}</td>
+                <td>{{ u.username }}</td>
+                <td>
+                    {% if u.role == 'Executive' %}
+                        <span class="tag" style="background: #fce4e6; color: #333;">{{ u.role }}</span>
+                    {% elif u.role == 'Admin' %}
+                        <span class="tag" style="background: #e8f4fd; color: #333;">{{ u.role }}</span>
+                    {% else %}
+                        <span class="tag" style="background: #fff0e0; color: #333;">{{ u.role }}</span>
+                    {% endif %}
+                </td>
+                <td style="text-align: right;">
+                    {% if u.id != session.user.id %}
+                    <form method="POST" action="/portal/staff/delete/{{ u.id }}" onsubmit="return confirm('Are you sure you want to completely remove this user?');" style="display:inline;">
+                        <button type="submit" class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;">🗑️ Revoke</button>
+                    </form>
+                    {% else %}
+                    <span style="font-size: 0.75rem; color: #999; padding: 4px 10px;">(You)</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}

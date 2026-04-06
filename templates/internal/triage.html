@@ -1,0 +1,72 @@
+{% extends "base_internal.html" %}
+{% block title %}Triage Inbox — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>🤖 AI Triage Inbox</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Review AI-categorized complaints. Claim tickets to begin investigation.</p>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <form method="GET" action="/portal/triage" style="display: flex; gap: 16px; width: 100%;">
+        <div class="form-group" style="flex: 1;">
+            <label>Filter by Status</label>
+            <select name="status" class="form-control" onchange="this.form.submit()">
+                <option value="All" {% if request.args.get('status') == 'All' %}selected{% endif %}>All Statuses</option>
+                <option value="Open" {% if request.args.get('status') == 'Open' %}selected{% endif %}>Open</option>
+                <option value="Claimed" {% if request.args.get('status') == 'Claimed' %}selected{% endif %}>Claimed</option>
+                <option value="Resolved" {% if request.args.get('status') == 'Resolved' %}selected{% endif %}>Resolved</option>
+            </select>
+        </div>
+        <div class="form-group" style="flex: 1;">
+            <label>Filter by Category</label>
+            <select name="category" class="form-control" onchange="this.form.submit()">
+                <option value="All" {% if request.args.get('category') == 'All' %}selected{% endif %}>All Categories</option>
+                <option value="Critical" {% if request.args.get('category') == 'Critical' %}selected{% endif %}>Critical</option>
+                <option value="Major" {% if request.args.get('category') == 'Major' %}selected{% endif %}>Major</option>
+                <option value="Minor" {% if request.args.get('category') == 'Minor' %}selected{% endif %}>Minor</option>
+            </select>
+        </div>
+    </form>
+</div>
+
+{% if reviews %}
+    {% for r in reviews %}
+    <div class="review-card {{ r.ai_category|lower }}">
+        <div class="review-header">
+            <div>
+                <span class="review-id">#{{ r.id }}</span>
+                <span style="color: #ccc; margin: 0 8px;">|</span>
+                <span style="color: #555;">{{ r.batch_number }}</span>
+                <span style="color: #ccc; margin: 0 8px;">|</span>
+                <span style="color: #777; font-size: 0.85rem;">{{ r.product_type }}</span>
+            </div>
+            <div class="review-tags">
+                <span class="tag tag-{{ r.ai_category|lower }}">{{ r.ai_category }}</span>
+                <span class="tag tag-{{ r.status|lower }}">{{ r.status }}</span>
+            </div>
+        </div>
+        
+        <p class="review-text">{{ r.review_text }}</p>
+        
+        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+            <div class="review-meta">
+                {% if r.claimed_by %}Claimed by: {{ r.claimed_by }} | {% endif %}
+                Sentiment: {{ r.ai_sentiment }} | {{ r.created_at[:16] }}
+            </div>
+            
+            {% if r.status == 'Open' and session.user.role == 'Quality Manager' %}
+            <form method="POST" action="/portal/triage/claim/{{ r.id }}">
+                <button type="submit" class="btn btn-orange" style="padding: 6px 14px; font-size: 0.8rem;">✋ Claim Ticket</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="alert alert-info">📭 No reviews match your filters.</div>
+{% endif %}
+
+{% endblock %}

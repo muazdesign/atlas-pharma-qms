@@ -1,0 +1,137 @@
+{% extends "base_internal.html" %}
+{% block title %}CAPA Tracker — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>🛠️ CAPA Tracker</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Log root causes, corrective actions, and preventive measures.</p>
+    </div>
+</div>
+
+<div class="form-row">
+    <!-- Resolve a Ticket Form -->
+    <div class="card">
+        <h3 style="color: #0056b3; margin-bottom: 24px;">Resolve a Claimed Ticket</h3>
+        
+        {% if claimed_reviews %}
+        <form method="POST" action="/portal/capa">
+            <div class="form-group">
+                <label for="review_id">Select Claimed Ticket</label>
+                <select class="form-control" name="review_id" id="review_id" required>
+                    <option value="" disabled selected>-- Select a Ticket --</option>
+                    {% for r in claimed_reviews %}
+                    <option value="{{ r.id }}">#{{ r.id }} — {{ r.batch_number }} ({{ r.product_type }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <!-- Dynamic Context Box -->
+            <div id="contextBox" style="display: none; background: #f8faff; border: 1px solid #e0eaff; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <strong style="color: #0056b3;">Ticket Details</strong>
+                    <span id="ctxCategory" class="tag"></span>
+                </div>
+                <div style="font-size: 0.85rem; color: #444;">
+                    <strong>Original Complaint:</strong><br>
+                    <span id="ctxReviewText" style="font-style: italic;"></span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="root_cause">Root Cause Analysis *</label>
+                <textarea class="form-control" id="root_cause" name="root_cause" rows="3" placeholder="Describe the identified root cause..." required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="corrective_action">Corrective Action *</label>
+                <textarea class="form-control" id="corrective_action" name="corrective_action" rows="3" placeholder="Immediate actions taken..." required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="preventive_action">Preventive Action *</label>
+                <textarea class="form-control" id="preventive_action" name="preventive_action" rows="3" placeholder="Measures to prevent recurrence..." required></textarea>
+            </div>
+            
+            <button type="submit" class="btn btn-success btn-block mt-20">✅ Log CAPA & Resolve</button>
+        </form>
+        {% else %}
+        <div class="alert alert-warning">No claimed tickets available for resolution. Claim a ticket from the Triage Inbox first.</div>
+        {% endif %}
+    </div>
+
+    <!-- History -->
+    <div>
+        <h3 style="color: #333; margin-bottom: 24px;">📜 Resolution History</h3>
+        {% if capa_logs %}
+            {% for log in capa_logs %}
+            <div class="capa-card">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                    <div>
+                        <strong>CAPA #{{ log.id }}</strong> <span style="color:#aaa;">→</span> Ticket #{{ log.review_id }}<br>
+                        <span style="font-size: 0.8rem; color: #777;">{{ log.batch_number }}</span>
+                    </div>
+                    <span class="tag" style="background:#d4edda; color:#155724;">Resolved</span>
+                </div>
+                <div style="font-size: 0.88rem; color: #555; line-height: 1.6;">
+                    <strong>🔍 Root Cause:</strong> {{ log.root_cause }}<br>
+                    <strong>🔧 Corrective:</strong> {{ log.corrective_action }}<br>
+                    <strong>🛡️ Preventive:</strong> {{ log.preventive_action }}<br>
+                    <div style="margin-top: 8px; font-size: 0.75rem; color: #999;">
+                        Resolved by {{ log.manager_assigned }} on {{ log.resolved_at[:16] }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info">No CAPA resolutions logged yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('review_id').addEventListener('change', function() {
+        const reviewId = this.value;
+        const contextBox = document.getElementById('contextBox');
+        const catBadge = document.getElementById('ctxCategory');
+        const revText = document.getElementById('ctxReviewText');
+        
+        if (!reviewId) {
+            contextBox.style.display = 'none';
+            return;
+        }
+        
+        // Show loading state
+        contextBox.style.display = 'block';
+        catBadge.textContent = 'Loading...';
+        catBadge.className = 'tag text-muted';
+        revText.textContent = 'Fetching data...';
+        
+        fetch(`/api/review/${reviewId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    revText.textContent = "Error: " + data.error;
+                    return;
+                }
+                
+                // Update Category Badge
+                let badgeClass = 'tag-minor';
+                if (data.ai_category === 'Critical') badgeClass = 'tag-critical';
+                if (data.ai_category === 'Major') badgeClass = 'tag-major';
+                
+                catBadge.textContent = data.ai_category;
+                catBadge.className = `tag ${badgeClass}`;
+                
+                // Update text
+                revText.textContent = `"${data.review_text}"`;
+            })
+            .catch(err => {
+                console.error(err);
+                revText.textContent = "Failed to load review details.";
+            });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base_public.html" %}
+{% block title %}Atlas Pharma — Quality You Can Trust{% endblock %}
+
+{% block content %}
+<!-- ── Hero ──────────────────────────────────────────────────────────── -->
+<section class="hero">
+    <h1>Atlas Pharma</h1>
+    <p>Committed to manufacturing high-quality pharmaceutical products with uncompromising standards in safety, efficacy, and compliance.</p>
+    <div class="hero-badges">
+        <span class="hero-badge">🏭 GMP Certified</span>
+        <span class="hero-badge">📋 ISO 9001:2015</span>
+        <span class="hero-badge">🔬 ICH Compliant</span>
+        <span class="hero-badge">🇹🇷 TİTCK Approved</span>
+    </div>
+</section>
+
+<!-- ── What We Do ────────────────────────────────────────────────────── -->
+<div class="container">
+    <h2 class="section-title">What We Do</h2>
+    <p class="section-subtitle">From raw materials to finished dosage forms — quality at every step.</p>
+    <div class="card-grid">
+        <div class="card text-center">
+            <div class="card-icon">🔬</div>
+            <h3>Quality Assurance</h3>
+            <p>Every batch undergoes rigorous multi-stage testing before release, following strict pharmacopeial standards.</p>
+        </div>
+        <div class="card text-center">
+            <div class="card-icon">🤖</div>
+            <h3>AI-Powered Triage</h3>
+            <p>Our intelligent QMS automatically classifies and prioritizes product feedback using advanced AI models.</p>
+        </div>
+        <div class="card text-center">
+            <div class="card-icon">📊</div>
+            <h3>Real-Time Monitoring</h3>
+            <p>Live dashboards track quality metrics, complaint trends, and CAPA resolutions across all product lines.</p>
+        </div>
+    </div>
+
+    <!-- ── Stats ─────────────────────────────────────────────────────── -->
+    <div class="stats-bar">
+        <h2 class="section-title" style="margin-bottom: 24px;">By the Numbers</h2>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-value">2</div>
+                <div class="stat-label">Product Lines</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">17</div>
+                <div class="stat-label">Quality Parameters</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">5</div>
+                <div class="stat-label">Lab Partners</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">24/7</div>
+                <div class="stat-label">Quality Monitoring</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Quick Links ───────────────────────────────────────────────── -->
+    <h2 class="section-title">Quick Links</h2>
+    <div class="quick-links mt-20">
+        <a href="/feedback" class="btn btn-primary">📝 Submit Feedback</a>
+        <a href="/catalog" class="btn btn-secondary">💊 View Products</a>
+        <a href="/contact" class="btn btn-secondary">📞 Contact Us</a>
+    </div>
+</div>
+{% endblock %}

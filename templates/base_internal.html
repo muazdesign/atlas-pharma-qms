@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QMS Portal — Atlas Pharma{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💊</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="portal-layout">
+        <!-- ── Sidebar ──────────────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <img src="{{ url_for('static', filename='images/atlas_logo.svg') }}" alt="Atlas Pharma">
+                <span>Atlas QMS</span>
+            </div>
+
+            <div class="sidebar-user">
+                <div class="label">Signed in as</div>
+                <div class="name">{{ session.user.full_name }}</div>
+                <div class="role">{{ session.user.role }}</div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="sidebar-nav-label">Navigation</div>
+                <a href="/portal/dashboard" class="{% if active_page == 'dashboard' %}active{% endif %}">
+                    <span class="nav-icon">📊</span> Dashboard
+                </a>
+                <a href="/portal/triage" class="{% if active_page == 'triage' %}active{% endif %}">
+                    <span class="nav-icon">🤖</span> Triage Inbox
+                </a>
+                <a href="/portal/specs" class="{% if active_page == 'specs' %}active{% endif %}">
+                    <span class="nav-icon">📋</span> Specs & Partners
+                </a>
+                {% if session.user.role == 'Quality Manager' %}
+                <a href="/portal/capa" class="{% if active_page == 'capa' %}active{% endif %}">
+                    <span class="nav-icon">🛠️</span> CAPA Tracker
+                </a>
+                {% endif %}
+                <a href="/portal/workflow" class="{% if active_page == 'workflow' %}active{% endif %}">
+                    <span class="nav-icon">🔄</span> Workflow
+                </a>
+                <a href="/portal/chat" class="{% if active_page == 'chat' %}active{% endif %}" style="margin-top: 10px;">
+                    <span class="nav-icon">💬</span> Global Chat
+                </a>
+                
+                {% if session.user.role == 'Executive' %}
+                <div class="sidebar-nav-label" style="margin-top: 24px; color: #ff6b6b;">Administration</div>
+                <a href="/portal/staff" class="{% if active_page == 'staff' %}active{% endif %}">
+                    <span class="nav-icon">👥</span> Employee Directory
+                </a>
+                {% endif %}
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="/logout">
+                    <span class="nav-icon">🚪</span> Sign Out
+                </a>
+            </div>
+        </aside>
+
+        <!-- ── Main Content ─────────────────────────────────────────── -->
+        <div class="portal-content">
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-container">
+                {% for category, message in messages %}
+                <div class="flash-msg alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

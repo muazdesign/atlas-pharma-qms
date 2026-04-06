@@ -1,0 +1,220 @@
+{% extends "base_internal.html" %}
+{% block title %}Global Team Chat — Atlas QMS{% endblock %}
+
+{% block head %}
+<style>
+    .chat-container {
+        background: #fff;
+        border: 1px solid #e8edf2;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 160px);
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    }
+
+    .chat-header {
+        padding: 20px 24px;
+        background: #f8faff;
+        border-bottom: 1px solid #e8edf2;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .chat-messages {
+        flex: 1;
+        padding: 24px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        background: #f4f6fa;
+    }
+
+    .msg-wrapper {
+        display: flex;
+        flex-direction: column;
+        max-width: 70%;
+    }
+
+    .msg-wrapper.me {
+        align-self: flex-end;
+    }
+
+    .msg-wrapper.other {
+        align-self: flex-start;
+    }
+
+    .msg-meta {
+        font-size: 0.72rem;
+        color: #888;
+        margin-bottom: 4px;
+        display: flex;
+        gap: 8px;
+    }
+
+    .msg-wrapper.me .msg-meta {
+        justify-content: flex-end;
+    }
+
+    .msg-bubble {
+        padding: 12px 18px;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .msg-wrapper.other .msg-bubble {
+        background: #fff;
+        color: #333;
+        border: 1px solid #e8edf2;
+        border-bottom-left-radius: 2px;
+    }
+
+    .msg-wrapper.me .msg-bubble {
+        background: #0056b3;
+        color: #fff;
+        border-bottom-right-radius: 2px;
+    }
+
+    .chat-input-area {
+        padding: 20px 24px;
+        background: #fff;
+        border-top: 1px solid #e8edf2;
+        display: flex;
+        gap: 12px;
+    }
+
+    .chat-input {
+        flex: 1;
+        resize: none;
+        padding: 14px 16px;
+        border: 1px solid #d0d7e2;
+        border-radius: 24px;
+        font-family: inherit;
+        font-size: 0.9rem;
+        outline: none;
+        transition: border-color 0.2s;
+    }
+
+    .chat-input:focus {
+        border-color: #0056b3;
+    }
+
+    .send-btn {
+        background: #0056b3;
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.2s;
+    }
+
+    .send-btn:hover {
+        background: #003d80;
+        transform: scale(1.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <div>
+            <h2 style="font-size: 1.2rem; color: #1a1a2e; margin: 0;">🌐 Global Team Chat</h2>
+            <div style="font-size: 0.8rem; color: #777; margin-top: 4px;">Quality Management team communication system
+            </div>
+        </div>
+        <div style="font-size: 0.85rem; color: #0056b3; background: #e8f4fd; padding: 4px 12px; border-radius: 20px;">
+            Live</div>
+    </div>
+
+    <div class="chat-messages" id="chatBox">
+        <!-- Messages loaded via JS -->
+    </div>
+
+    <div class="chat-input-area">
+        <input type="text" id="msgInput" class="chat-input" placeholder="Type a message to the team..."
+            autocomplete="off" onkeypress="if(event.key === 'Enter') sendMessage()">
+        <button class="send-btn" onclick="sendMessage()" title="Send">➤</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const chatBox = document.getElementById('chatBox');
+    const msgInput = document.getElementById('msgInput');
+    let lastMsgCount = 0;
+
+    function renderMessage(msg) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `msg-wrapper ${msg.is_me ? 'me' : 'other'}`;
+
+        const timestampRaw = new Date(msg.created_at + 'Z');
+        const timeStr = timestampRaw.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        wrapper.innerHTML = `
+            <div class="msg-meta">
+                ${!msg.is_me ? `<strong>${msg.full_name}</strong> (${msg.role})` : ''}
+                <span>${timeStr}</span>
+            </div>
+            <div class="msg-bubble">${escapeHtml(msg.message)}</div>
+        `;
+        return wrapper;
+    }
+
+    function escapeHtml(unsafe) {
+        return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function fetchMessages() {
+        fetch('/api/chat')
+            .then(res => res.json())
+            .then(data => {
+                if (data.length > lastMsgCount) {
+                    let isScrolledToBottom = chatBox.scrollHeight - chatBox.clientHeight <= chatBox.scrollTop + 50;
+
+                    chatBox.innerHTML = '';
+                    data.forEach(msg => {
+                        chatBox.appendChild(renderMessage(msg));
+                    });
+                    lastMsgCount = data.length;
+
+                    if (isScrolledToBottom || lastMsgCount <= 100) {
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                }
+            })
+            .catch(err => console.error("Chat sync error:", err));
+    }
+
+    function sendMessage() {
+        const text = msgInput.value.trim();
+        if (!text) return;
+
+        msgInput.value = '';
+
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+        }).then(() => {
+            fetchMessages(); // Immediate refresh
+        });
+    }
+
+    // Init fetch and poll every 3 seconds
+    fetchMessages();
+    setInterval(fetchMessages, 3000);
+</script>
+{% endblock %}

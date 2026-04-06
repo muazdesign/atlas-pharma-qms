@@ -1,0 +1,84 @@
+{% extends "base_public.html" %}
+{% block title %}Product Catalog — Atlas Pharma{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>💊 Product Catalog</h1>
+        <p>Explore our pharmaceutical product range — quality you can trust.</p>
+    </div>
+
+    <!-- ── Product 1: Paracetamol Tablet ─────────────────────────────── -->
+    <div class="product-card">
+        <div class="product-img tablet">💊</div>
+        <div class="product-info">
+            <h3>Paracetamol Tablet 500 mg</h3>
+            <span class="product-badge">In Stock</span>
+            <p>White to off-white, round, biconvex film-coated tablets containing 500 mg of paracetamol (acetaminophen). Manufactured under strict GMP guidelines with full batch traceability.</p>
+            <div class="product-meta">
+                <span>🏷️ 500 mg per tablet</span>
+                <span>📦 20 tablets / blister</span>
+                <span>🧪 USP Compliant</span>
+            </div>
+            <div class="mt-20">
+                <a href="https://www.trendyol.com" target="_blank" class="btn btn-primary">🛒 Buy on Trendyol</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Specs Table -->
+    <details class="mb-40">
+        <summary style="cursor:pointer; font-weight:600; color:#0056b3; padding:12px 0;">📋 View Quality Specifications — Paracetamol Tablet</summary>
+        <table class="specs-table">
+            <thead>
+                <tr><th>Parameter</th><th>Specification</th><th>Test Method</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Appearance</td><td>White to off-white, round, biconvex</td><td>Visual Inspection</td></tr>
+                <tr><td>Average Weight</td><td>550 ± 5% mg</td><td>USP ⟨791⟩</td></tr>
+                <tr><td>Hardness</td><td>5 – 10 kp</td><td>Tablet Hardness Tester</td></tr>
+                <tr><td>Friability</td><td>≤ 1.0%</td><td>USP ⟨1216⟩</td></tr>
+                <tr><td>Disintegration</td><td>≤ 15 minutes</td><td>USP ⟨701⟩</td></tr>
+                <tr><td>Assay</td><td>95.0 – 105.0%</td><td>HPLC</td></tr>
+                <tr><td>Dissolution</td><td>≥ 80% in 30 min</td><td>USP ⟨711⟩ Apparatus II</td></tr>
+            </tbody>
+        </table>
+    </details>
+
+    <!-- ── Product 2: Paracetamol Syrup ──────────────────────────────── -->
+    <div class="product-card">
+        <div class="product-img syrup">🧴</div>
+        <div class="product-info">
+            <h3>Paracetamol Syrup 120 mg / 5 mL</h3>
+            <span class="product-badge">In Stock</span>
+            <p>Clear, cherry-flavored oral suspension containing 120 mg paracetamol per 5 mL. Designed for pediatric use with a calibrated measuring cup included. Preservative-controlled formula.</p>
+            <div class="product-meta">
+                <span>🏷️ 120 mg / 5 mL</span>
+                <span>📦 100 mL bottle</span>
+                <span>🍒 Cherry Flavor</span>
+            </div>
+            <div class="mt-20">
+                <a href="https://www.trendyol.com" target="_blank" class="btn btn-orange">🛒 Buy on Trendyol</a>
+            </div>
+        </div>
+    </div>
+
+    <details class="mb-40">
+        <summary style="cursor:pointer; font-weight:600; color:#0056b3; padding:12px 0;">📋 View Quality Specifications — Paracetamol Syrup</summary>
+        <table class="specs-table">
+            <thead>
+                <tr><th>Parameter</th><th>Specification</th><th>Test Method</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Appearance</td><td>Clear, colorless to pale-yellow liquid</td><td>Visual / Organoleptic</td></tr>
+                <tr><td>pH</td><td>4.5 – 6.5</td><td>pH Meter (USP ⟨791⟩)</td></tr>
+                <tr><td>Specific Gravity</td><td>1.10 – 1.25 g/mL</td><td>Densitometer</td></tr>
+                <tr><td>Assay</td><td>90.0 – 110.0%</td><td>HPLC</td></tr>
+                <tr><td>Volume</td><td>100 mL ± 2%</td><td>Graduated Cylinder</td></tr>
+                <tr><td>Viscosity</td><td>50 – 200 cP</td><td>Brookfield Viscometer</td></tr>
+                <tr><td>Microbial Limits</td><td>TAMC ≤ 10² CFU/mL</td><td>USP ⟨61⟩/⟨62⟩</td></tr>
+            </tbody>
+        </table>
+    </details>
+</div>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "base_internal.html" %}
+{% block title %}Specs & Partners — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>📋 Product Specs & Lab Partners</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">The source of truth for quality parameters and
+            testing partners.</p>
+    </div>
+</div>
+
+<div class="tabs-wrapper">
+    <div class="tabs">
+        <button class="tab active" data-tab="tab-specs">🔬 Product Specifications</button>
+        <button class="tab" data-tab="tab-partners">🏛️ Lab Partners</button>
+    </div>
+
+    <!-- Tab 1: Specs -->
+    <div id="tab-specs" class="tab-panel active">
+        <div class="card" style="padding: 24px;">
+            {% if specs %}
+            <div
+                style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px; background: #f8faff; padding: 12px 16px; border-radius: 8px; border: 1px solid #e1e8f0;">
+                <label for="productFilter" style="font-weight: 600; color: #333; font-size: 0.95rem;">💊 Filter by
+                    Product:</label>
+                <select id="productFilter" class="form-control"
+                    style="width: auto; padding: 6px 12px; border-radius: 6px;">
+                    <option value="All">All Products (View All Specs)</option>
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+            <table class="specs-table" id="specsTable" style="margin: 0;">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Form</th>
+                        <th>Parameter</th>
+                        <th>Specification</th>
+                        <th>Test Method</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in specs %}
+                    <tr>
+                        <td>{{ s.product_name }}</td>
+                        <td>{{ s.form }}</td>
+                        <td style="font-weight: 500;">{{ s.parameter }}</td>
+                        <td>{{ s.specification }}</td>
+                        <td>{{ s.test_method }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="alert alert-info" style="margin:0;">No specifications loaded. Run the seed script.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Tab 2: Partners -->
+    <div id="tab-partners" class="tab-panel">
+        <div class="card-grid" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
+            {% for p in partners %}
+            <div
+                class="partner-card 
+                {% if p.type == 'Standards Body' %}standards{% elif p.type == 'Research Laboratory' %}research{% elif p.type == 'Regulatory Authority' %}regulatory{% else %}testing{% endif %}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <h3 style="color: #333; margin-bottom: 4px; font-size: 1.1rem;">{{ p.institution_name }}</h3>
+                    <span class="tag" style="background: rgba(0,0,0,0.05); color: #555;">{{ p.type }}</span>
+                </div>
+                <div style="font-size: 0.88rem; color: #555; line-height: 1.6; margin-top: 12px;">
+                    <strong>Standards:</strong> {{ p.standards }}<br>
+                    <strong>Contact:</strong> {{ p.contact_info }}<br>
+                    <strong>Notes:</strong> {{ p.notes }}
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info">No partners loaded. Run the seed script.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const table = document.getElementById('specsTable');
+        if (!table) return;
+
+        // Extract distinct products from the table DOM to emulate stateful prop loading
+        const rows = Array.from(table.querySelectorAll('tbody tr'));
+        const products = new Set();
+        rows.forEach(row => {
+            products.add(row.cells[0].innerText.trim());
+        });
+
+        // Populate the dropdown
+        const select = document.getElementById('productFilter');
+        while (select.options.length > 1) select.remove(1);  // ← ADD THIS LINE
+        products.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.textContent = p;
+            select.appendChild(opt);
+        });
+
+        // Stateful filtering logic
+        select.addEventListener('change', (e) => {
+            const val = e.target.value;
+            rows.forEach(row => {
+                const productCell = row.cells[0].innerText.trim();
+                if (val === 'All' || productCell === val) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}
+{% endblock %}

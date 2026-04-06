@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: atlas-pharma-qms
+    runtime: python
+    buildCommand: |
+      pip install -r requirements.txt
+      python -c "from data.db_manager import init_db; init_db(); from data.seed_data import run_all_seeds; run_all_seeds(); print('DB seeded!')"
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"

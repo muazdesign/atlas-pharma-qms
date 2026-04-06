@@ -1,0 +1,89 @@
+{% extends "base_internal.html" %}
+{% block title %}Workflow — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>🔄 Quality Workflow</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Live pipeline view — each step reflects real-time ticket data.</p>
+    </div>
+</div>
+
+<div class="flowchart">
+    <!-- Step 1 -->
+    <div class="flow-step {% if kpis.total > 0 %}blue active{% else %}inactive{% endif %}">
+        <div class="step-icon">📥</div>
+        <div class="step-label">Feedback Received</div>
+        <div class="step-count">{{ kpis.total }}</div>
+        <div class="step-sub">total tickets</div>
+    </div>
+    <div class="flow-arrow">➔</div>
+    
+    <!-- Step 2 -->
+    <div class="flow-step {% if kpis.open > 0 %}red active{% else %}inactive{% endif %}">
+        <div class="step-icon">🤖</div>
+        <div class="step-label">AI Triage</div>
+        <div class="step-count">{{ kpis.open }}</div>
+        <div class="step-sub">awaiting claim</div>
+    </div>
+    <div class="flow-arrow">➔</div>
+    
+    <!-- Step 3 -->
+    <div class="flow-step {% if kpis.claimed > 0 %}orange active{% else %}inactive{% endif %}">
+        <div class="step-icon">🔍</div>
+        <div class="step-label">Investigation</div>
+        <div class="step-count">{{ kpis.claimed }}</div>
+        <div class="step-sub">in progress</div>
+    </div>
+    <div class="flow-arrow">➔</div>
+    
+    <!-- Step 4 -->
+    <div class="flow-step {% if kpis.claimed > 0 %}purple active{% else %}inactive{% endif %}">
+        <div class="step-icon">🛠️</div>
+        <div class="step-label">CAPA</div>
+        <div class="step-count">{{ kpis.claimed }}</div>
+        <div class="step-sub">pending resolution</div>
+    </div>
+    <div class="flow-arrow">➔</div>
+    
+    <!-- Step 5 -->
+    <div class="flow-step {% if kpis.resolved > 0 %}green active{% else %}inactive{% endif %}">
+        <div class="step-icon">✅</div>
+        <div class="step-label">Resolved</div>
+        <div class="step-count">{{ kpis.resolved }}</div>
+        <div class="step-sub">closed</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 class="section-title text-left">AI Category Breakdown</h3>
+    <div class="cat-grid">
+        <div class="cat-card critical">
+            <div class="cat-count">{{ cat_counts.get('Critical', 0) }}</div>
+            <div style="color: #dc3545; font-weight: 600; font-size: 1rem; margin-top: 4px;">🚨 Critical</div>
+            <div style="color: #666; font-size: 0.8rem; margin-top: 4px;">Safety / Regulatory Risk</div>
+        </div>
+        <div class="cat-card major">
+            <div class="cat-count">{{ cat_counts.get('Major', 0) }}</div>
+            <div style="color: #e06800; font-weight: 600; font-size: 1rem; margin-top: 4px;">⚠️ Major</div>
+            <div style="color: #666; font-size: 0.8rem; margin-top: 4px;">Quality Deviation</div>
+        </div>
+        <div class="cat-card minor">
+            <div class="cat-count">{{ cat_counts.get('Minor', 0) }}</div>
+            <div style="color: #b8860b; font-weight: 600; font-size: 1rem; margin-top: 4px;">💡 Minor</div>
+            <div style="color: #666; font-size: 0.8rem; margin-top: 4px;">Low-Impact Observation</div>
+        </div>
+    </div>
+</div>
+
+<div class="explain-block">
+    <strong>How the Workflow Operates:</strong>
+    <ol>
+        <li><strong>Feedback Received</strong> — A complaint is submitted via the public form.</li>
+        <li><strong>AI Triage</strong> — Gemini AI categorizes it as Critical, Major, or Minor and assigns sentiment.</li>
+        <li><strong>Investigation</strong> — A Quality Manager claims the ticket and begins root-cause analysis.</li>
+        <li><strong>CAPA</strong> — Corrective and Preventive Actions are documented and logged.</li>
+        <li><strong>Resolved</strong> — The ticket is closed with a full audit trail.</li>
+    </ol>
+</div>
+{% endblock %}

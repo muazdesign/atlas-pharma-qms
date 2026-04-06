@@ -1,0 +1,93 @@
+{% extends "base_public.html" %}
+{% block title %}Contact Us — Atlas Pharma{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>📞 Contact Us</h1>
+        <p>We'd love to hear from you. Reach out to our team anytime.</p>
+    </div>
+
+    <div class="contact-grid">
+        <!-- Contact Info -->
+        <div class="contact-info-card">
+            <h3 style="color: #0056b3; margin-bottom: 24px;">Get In Touch</h3>
+            
+            <div class="contact-item">
+                <div class="contact-item-icon">🏢</div>
+                <div>
+                    <div class="contact-item-label">Head Office</div>
+                    <div class="contact-item-value">
+                        Atlas Pharma İlaç San. ve Tic. A.Ş.<br>
+                        Organize Sanayi Bölgesi, No: 42<br>
+                        34906 Pendik, İstanbul, Türkiye
+                    </div>
+                </div>
+            </div>
+            
+            <div class="contact-item">
+                <div class="contact-item-icon">📧</div>
+                <div>
+                    <div class="contact-item-label">Email</div>
+                    <div class="contact-item-value">info@atlaspharma.com.tr<br>quality@atlaspharma.com.tr</div>
+                </div>
+            </div>
+            
+            <div class="contact-item">
+                <div class="contact-item-icon">📱</div>
+                <div>
+                    <div class="contact-item-label">Phone</div>
+                    <div class="contact-item-value">+90 (216) 555 42 00<br>Mon – Fri, 09:00 – 18:00 (GMT+3)</div>
+                </div>
+            </div>
+            
+            <div class="contact-item">
+                <div class="contact-item-icon">🌐</div>
+                <div>
+                    <div class="contact-item-label">Website</div>
+                    <div class="contact-item-value"><a href="https://www.atlaspharma.com.tr">www.atlaspharma.com.tr</a></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contact Form -->
+        <div class="card">
+            <h3 style="color: #0056b3; margin-bottom: 4px;">Send a Message</h3>
+            <p style="color: #999; font-size: 0.85rem; margin-bottom: 20px;">Demo form — messages are not sent.</p>
+            
+            <form method="POST" action="/contact">
+                <div class="form-group">
+                    <label for="name">Your Name</label>
+                    <input type="text" class="form-control" id="name" name="name" placeholder="Full name" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Your Email</label>
+                    <input type="email" class="form-control" id="email" name="email" placeholder="you@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="subject">Subject</label>
+                    <select class="form-control" id="subject" name="subject">
+                        <option>General Inquiry</option>
+                        <option>Product Question</option>
+                        <option>Quality / Regulatory</option>
+                        <option>Partnership Opportunity</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="message">Message</label>
+                    <textarea class="form-control" id="message" name="message" rows="4" placeholder="How can we help you?" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">📤 Send Message</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Map placeholder -->
+    <div style="background: linear-gradient(135deg, #f0f5ff, #e0eaff); border-radius: 12px; padding: 40px; text-align: center; margin-top: 40px;">
+        <span style="font-size: 2.5rem;">🗺️</span>
+        <h3 style="color: #0056b3; margin: 12px 0 4px 0;">Visit Us</h3>
+        <p style="color: #666; font-size: 0.9rem;">Organize Sanayi Bölgesi, No: 42 — Pendik, İstanbul, Türkiye</p>
+    </div>
+</div>
+{% endblock %}
