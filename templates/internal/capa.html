@@ -5,7 +5,7 @@
 <div class="portal-topbar">
     <div>
         <h1>🛠️ CAPA Tracker</h1>
-        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Log root causes, corrective actions, and preventive measures.</p>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Log root causes, corrective actions, and preventive measures. Trace complaints back to batch QC data.</p>
     </div>
 </div>
 
@@ -21,7 +21,9 @@
                 <select class="form-control" name="review_id" id="review_id" required>
                     <option value="" disabled selected>-- Select a Ticket --</option>
                     {% for r in claimed_reviews %}
-                    <option value="{{ r.id }}">#{{ r.id }} — {{ r.batch_number }} ({{ r.product_type }})</option>
+                    <option value="{{ r.id }}" data-batch="{{ r.batch_number }}">
+                        #{{ r.id }} — {{ r.batch_number }} ({{ r.product_type }})
+                    </option>
                     {% endfor %}
                 </select>
             </div>
@@ -35,6 +37,17 @@
                 <div style="font-size: 0.85rem; color: #444;">
                     <strong>Original Complaint:</strong><br>
                     <span id="ctxReviewText" style="font-style: italic;"></span>
+                </div>
+            </div>
+
+            <!-- Batch Traceability Panel -->
+            <div id="batchTracePanel" style="display: none; margin-bottom: 24px;">
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <strong style="color: #166534;">🔍 Batch QC Traceability</strong>
+                        <span id="traceBatchLabel" class="tag" style="background: #dcfce7; color: #166534;"></span>
+                    </div>
+                    <div id="batchTraceContent" style="font-size: 0.85rem;"></div>
                 </div>
             </div>
             
@@ -92,18 +105,26 @@
 
 {% block scripts %}
 <script>
-    document.getElementById('review_id').addEventListener('change', function() {
+document.addEventListener('DOMContentLoaded', () => {
+    const reviewSelect = document.getElementById('review_id');
+    if (!reviewSelect) return;
+
+    reviewSelect.addEventListener('change', function() {
         const reviewId = this.value;
+        const selectedOption = this.options[this.selectedIndex];
+        const batchNumber = selectedOption.dataset.batch;
         const contextBox = document.getElementById('contextBox');
         const catBadge = document.getElementById('ctxCategory');
         const revText = document.getElementById('ctxReviewText');
+        const tracePanel = document.getElementById('batchTracePanel');
         
         if (!reviewId) {
             contextBox.style.display = 'none';
+            tracePanel.style.display = 'none';
             return;
         }
         
-        // Show loading state
+        // Show loading state for review details
         contextBox.style.display = 'block';
         catBadge.textContent = 'Loading...';
         catBadge.className = 'tag text-muted';
@@ -117,21 +138,90 @@
                     return;
                 }
                 
-                // Update Category Badge
                 let badgeClass = 'tag-minor';
                 if (data.ai_category === 'Critical') badgeClass = 'tag-critical';
                 if (data.ai_category === 'Major') badgeClass = 'tag-major';
                 
                 catBadge.textContent = data.ai_category;
                 catBadge.className = `tag ${badgeClass}`;
-                
-                // Update text
                 revText.textContent = `"${data.review_text}"`;
             })
             .catch(err => {
                 console.error(err);
                 revText.textContent = "Failed to load review details.";
             });
+
+        // Fetch batch QC records for traceability
+        if (batchNumber) {
+            tracePanel.style.display = 'block';
+            document.getElementById('traceBatchLabel').textContent = batchNumber;
+            const traceContent = document.getElementById('batchTraceContent');
+            traceContent.innerHTML = '<span style="color: #888;">Loading batch QC data...</span>';
+
+            fetch(`/api/batch-records/${encodeURIComponent(batchNumber)}`)
+                .then(res => res.json())
+                .then(records => {
+                    if (!records.length) {
+                        traceContent.innerHTML = '<span style="color: #888;">No QC test records found for this batch.</span>';
+                        return;
+                    }
+
+                    let html = `<table class="specs-table" style="margin: 0; font-size: 0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Checkpoint</th>
+                                <th>Mean (X̄)</th>
+                                <th>Range (R)</th>
+                                <th>Tolerance</th>
+                                <th>Status</th>
+                                <th>⚠️</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+                    records.forEach(r => {
+                        // Check if near limits (within 10% of tolerance range)
+                        let nearLimit = false;
+                        let warningText = '';
+                        if (r.tol_min !== null && r.tol_max !== null) {
+                            const tolRange = r.tol_max - r.tol_min;
+                            const marginPct = 0.10;
+                            const lowerWarn = r.tol_min + tolRange * marginPct;
+                            const upperWarn = r.tol_max - tolRange * marginPct;
+                            if (r.mean <= lowerWarn || r.mean >= upperWarn) {
+                                nearLimit = true;
+                                warningText = r.mean <= lowerWarn ? 'Near LSL' : 'Near USL';
+                            }
+                        }
+
+                        const rowClass = r.status === 'FAIL' ? 'trace-row-fail' :
+                                        nearLimit ? 'trace-row-warn' : '';
+
+                        html += `<tr class="${rowClass}">
+                            <td style="font-weight: 500;">${r.checkpoint}</td>
+                            <td>${r.mean.toFixed(2)}</td>
+                            <td>${r.range_val.toFixed(2)}</td>
+                            <td>${r.tolerance || '—'}</td>
+                            <td>
+                                <span class="tag ${r.status === 'PASS' ? 'qc-status-pass' : 'qc-status-fail'}">
+                                    ${r.status}
+                                </span>
+                            </td>
+                            <td>${nearLimit ? '<span class="tag trace-tag-warn">' + warningText + '</span>' : '—'}</td>
+                        </tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                    traceContent.innerHTML = html;
+                })
+                .catch(err => {
+                    console.error(err);
+                    traceContent.innerHTML = '<span style="color: #dc3545;">Failed to load batch data.</span>';
+                });
+        } else {
+            tracePanel.style.display = 'none';
+        }
     });
+});
 </script>
 {% endblock %}

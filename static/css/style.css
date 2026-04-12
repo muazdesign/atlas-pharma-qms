@@ -1091,3 +1091,179 @@ textarea.form-control {
 }
 .explain-block strong { color: #0056b3; }
 .explain-block ol { color: #555; font-size: 0.88rem; line-height: 1.8; padding-left: 20px; }
+
+/* =====================================================================
+   QC DATA ENTRY
+   ===================================================================== */
+
+.qc-section {
+    padding: 24px;
+    margin-bottom: 16px;
+    border-left: 4px solid #0056b3;
+}
+
+.qc-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 18px;
+    gap: 16px;
+}
+
+.qc-checkpoint-name {
+    color: #1a1a2e;
+    font-size: 1.05rem;
+}
+
+.qc-section-meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+.qc-section-meta span {
+    font-size: 0.78rem;
+    color: #777;
+    white-space: nowrap;
+}
+
+.qc-inputs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.qc-input-cell {
+    text-align: center;
+}
+
+.qc-input-label {
+    display: block;
+    font-size: 0.68rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+
+.qc-input-field {
+    width: 100%;
+    padding: 10px 8px;
+    border: 1.5px solid #d0d7e2;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-family: 'Inter', sans-serif;
+    text-align: center;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    background: #fff;
+}
+.qc-input-field:focus {
+    outline: none;
+    border-color: #0056b3;
+    box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.12);
+}
+.qc-input-field.qc-input-ok {
+    border-color: #28a745;
+    background: #f0fdf4;
+}
+.qc-input-field.qc-input-warn {
+    border-color: #dc3545;
+    background: #fff5f5;
+}
+
+/* Remove number input spinners */
+.qc-input-field::-webkit-outer-spin-button,
+.qc-input-field::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.qc-input-field[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.qc-result-row {
+    display: flex;
+    gap: 24px;
+    padding: 14px 18px;
+    background: #f8faff;
+    border-radius: 8px;
+    border: 1px solid #e8edf2;
+    flex-wrap: wrap;
+}
+
+.qc-result-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.qc-result-label {
+    font-size: 0.7rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.qc-result-value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #1a1a2e;
+}
+
+.qc-status-pass {
+    background: #d4edda !important;
+    color: #155724 !important;
+    font-weight: 600;
+}
+.qc-status-fail {
+    background: #f8d7da !important;
+    color: #721c24 !important;
+    font-weight: 600;
+}
+.qc-status-pending {
+    background: #e8edf5 !important;
+    color: #666 !important;
+}
+
+.qc-overall-status .tag {
+    padding: 6px 16px;
+    font-size: 0.85rem;
+}
+
+/* =====================================================================
+   SPC DASHBOARD
+   ===================================================================== */
+
+.spc-filters {
+    background: linear-gradient(135deg, #f8faff, #f0f5ff);
+    border: 1px solid #ccdcf0;
+}
+
+/* =====================================================================
+   CAPA BATCH TRACEABILITY
+   ===================================================================== */
+
+.trace-row-fail td {
+    background: #fff5f5 !important;
+}
+.trace-row-fail td:first-child {
+    border-left: 3px solid #dc3545;
+}
+
+.trace-row-warn td {
+    background: #fffbf0 !important;
+}
+.trace-row-warn td:first-child {
+    border-left: 3px solid #fd7e14;
+}
+
+.trace-tag-warn {
+    background: #fff3cd !important;
+    color: #856404 !important;
+    font-size: 0.68rem !important;
+}
+

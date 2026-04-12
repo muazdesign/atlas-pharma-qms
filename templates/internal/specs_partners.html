@@ -18,42 +18,182 @@
 
     <!-- Tab 1: Specs -->
     <div id="tab-specs" class="tab-panel active">
+
+        <!-- Upload QC Checklist (Quality Manager & Executive only) -->
+        {% if session.user.role in ['Quality Manager', 'Executive'] %}
+        <div class="card" style="padding: 20px; margin-bottom: 20px; border: 1px dashed #ccdcf0; background: #fafcff;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div>
+                    <h3 style="color: #0056b3; margin: 0 0 4px 0; font-size: 0.95rem;">📥 Import QC Checklist from Excel</h3>
+                    <p style="margin: 0; font-size: 0.78rem; color: #888;">
+                        Expects columns: <code>No</code>, <code>Checkpoint</code>, <code>Sample Size</code>,
+                        <code>Test Method</code>, <code>Tolerance</code>, <code>Pass / Fail Criterion</code>,
+                        <code>Defect Type if Fail</code>
+                    </p>
+                </div>
+                <button type="button" id="toggleUpload" class="btn btn-secondary"
+                    style="padding: 6px 14px; font-size: 0.8rem;">
+                    Show Upload
+                </button>
+            </div>
+
+            <div id="uploadSection" style="display: none;">
+                <!-- Step 1: Pick product & upload file -->
+                <div style="display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
+                    <div class="form-group" style="margin-bottom: 0; min-width: 240px;">
+                        <label style="font-size: 0.78rem;">Product Name <span style="color:red;">*</span></label>
+                        <input type="text" id="uploadProductName" class="form-control"
+                            placeholder="e.g. Paracetamol Tablet 500 mg"
+                            style="font-size: 0.85rem; padding: 8px 12px;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; min-width: 140px;">
+                        <label style="font-size: 0.78rem;">Form <span style="color:red;">*</span></label>
+                        <select id="uploadForm" class="form-control" style="font-size: 0.85rem; padding: 8px 12px;">
+                            <option value="Tablet">Tablet</option>
+                            <option value="Syrup">Syrup</option>
+                            <option value="Capsule">Capsule</option>
+                            <option value="Injection">Injection</option>
+                            <option value="Cream">Cream</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-size: 0.78rem;">Excel File (.xlsx / .xls) <span style="color:red;">*</span></label>
+                        <input type="file" id="excelFileInput" accept=".xlsx,.xls"
+                            style="font-size: 0.85rem; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; background: #fff;">
+                    </div>
+                    <button type="button" id="parseExcelBtn" class="btn btn-primary"
+                        style="padding: 8px 18px; font-size: 0.85rem;">
+                        📊 Preview
+                    </button>
+                </div>
+
+                <!-- Preview table -->
+                <div id="previewSection" style="display:none;">
+                    <div style="font-size: 0.82rem; color: #555; margin-bottom: 8px;">
+                        Preview — <span id="previewCount">0</span> rows parsed. Review before importing.
+                    </div>
+                    <div style="overflow-x: auto; max-height: 300px; border: 1px solid #dce8f8; border-radius: 8px;">
+                        <table style="width:100%; border-collapse: collapse; font-size: 0.8rem;">
+                            <thead style="background: #eaf1fb; position: sticky; top: 0;">
+                                <tr>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">#</th>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Checkpoint</th>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Sample Size</th>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Test Method</th>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Tolerance</th>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Pass/Fail Criterion</th>
+                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Defect Type if Fail</th>
+                                </tr>
+                            </thead>
+                            <tbody id="previewTableBody"></tbody>
+                        </table>
+                    </div>
+                    <!-- Hidden form to POST parsed data -->
+                    <form method="POST" action="/portal/specs/import" id="importForm" style="margin-top: 14px;">
+                        <input type="hidden" name="product_name" id="hiddenProductName">
+                        <input type="hidden" name="form" id="hiddenForm">
+                        <input type="hidden" name="rows_json" id="hiddenRowsJson">
+                        <div style="display:flex; gap: 10px; align-items: center;">
+                            <button type="submit" class="btn btn-success"
+                                style="padding: 8px 22px; font-size: 0.85rem;">
+                                💾 Import All Rows
+                            </button>
+                            <button type="button" id="cancelPreview" class="btn btn-secondary"
+                                style="padding: 8px 16px; font-size: 0.85rem;">
+                                ✕ Cancel
+                            </button>
+                            <span style="font-size:0.78rem; color:#888;">
+                                This will add <strong id="previewCount2">0</strong> specification rows for
+                                <strong id="previewProductLabel"></strong>.
+                            </span>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="parseError" style="display:none; color:#c0392b; font-size:0.82rem; margin-top:8px;"></div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Specs Table -->
         <div class="card" style="padding: 24px;">
             {% if specs %}
-            <div
-                style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px; background: #f8faff; padding: 12px 16px; border-radius: 8px; border: 1px solid #e1e8f0;">
-                <label for="productFilter" style="font-weight: 600; color: #333; font-size: 0.95rem;">💊 Filter by
-                    Product:</label>
-                <select id="productFilter" class="form-control"
-                    style="width: auto; padding: 6px 12px; border-radius: 6px;">
+            <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px; background: #f8faff; padding: 12px 16px; border-radius: 8px; border: 1px solid #e1e8f0;">
+                <label for="productFilter" style="font-weight: 600; color: #333; font-size: 0.95rem;">💊 Filter by Product:</label>
+                <select id="productFilter" class="form-control" style="width: auto; padding: 6px 12px; border-radius: 6px;">
                     <option value="All">All Products (View All Specs)</option>
-                    <!-- Options populated by JS -->
                 </select>
             </div>
-            <table class="specs-table" id="specsTable" style="margin: 0;">
-                <thead>
-                    <tr>
-                        <th>Product</th>
-                        <th>Form</th>
-                        <th>Parameter</th>
-                        <th>Specification</th>
-                        <th>Test Method</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for s in specs %}
-                    <tr>
-                        <td>{{ s.product_name }}</td>
-                        <td>{{ s.form }}</td>
-                        <td style="font-weight: 500;">{{ s.parameter }}</td>
-                        <td>{{ s.specification }}</td>
-                        <td>{{ s.test_method }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div style="overflow-x: auto;">
+                <table class="specs-table" id="specsTable" style="margin: 0; font-size: 0.83rem;">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Product</th>
+                            <th>Form</th>
+                            <th>Checkpoint</th>
+                            <th>Sample Size</th>
+                            <th>Test Method</th>
+                            <th>Tolerance</th>
+                            <th>Pass / Fail Criterion</th>
+                            <th>Defect Type if Fail</th>
+                            {% if session.user.role in ['Quality Manager', 'Executive'] %}
+                            <th style="width: 60px; text-align: center;">Action</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in specs %}
+                        <tr>
+                            <td style="color:#aaa; font-size:0.75rem;">{{ loop.index }}</td>
+                            <td>{{ s.product_name }}</td>
+                            <td>{{ s.form }}</td>
+                            <td style="font-weight: 500;">{{ s.checkpoint }}</td>
+                            <td>{{ s.sample_size }}</td>
+                            <td>{{ s.test_method }}</td>
+                            <td>{{ s.tolerance }}</td>
+                            <td>
+                                <span style="
+                                    display: inline-block;
+                                    padding: 2px 8px;
+                                    border-radius: 12px;
+                                    font-size: 0.75rem;
+                                    font-weight: 600;
+                                    background: {% if s.pass_fail_criterion and 'Critical' in (s.pass_fail_criterion or '') %}#fff0f0{% else %}#f0fff4{% endif %};
+                                    color: {% if s.pass_fail_criterion and 'Critical' in (s.pass_fail_criterion or '') %}#c0392b{% else %}#27ae60{% endif %};
+                                ">{{ s.pass_fail_criterion or '—' }}</span>
+                            </td>
+                            <td>
+                                {% if s.defect_type == 'Critical' %}
+                                <span style="color: #c0392b; font-weight:600; font-size:0.78rem;">⊖ Critical</span>
+                                {% elif s.defect_type == 'Major' %}
+                                <span style="color: #e67e22; font-weight:600; font-size:0.78rem;">⚠ Major</span>
+                                {% elif s.defect_type == 'Minor' %}
+                                <span style="color: #2980b9; font-size:0.78rem;">ℹ Minor</span>
+                                {% elif s.defect_type == 'Informational' %}
+                                <span style="color: #27ae60; font-size:0.78rem;">✓ Informational</span>
+                                {% else %}
+                                <span style="color: #999; font-size:0.78rem;">—</span>
+                                {% endif %}
+                            </td>
+                            {% if session.user.role in ['Quality Manager', 'Executive'] %}
+                            <td style="text-align: center;">
+                                <form method="POST" action="/portal/specs/delete/{{ s.id }}" style="margin: 0;"
+                                    data-confirm="Are you sure you want to delete this specification?">
+                                    <button type="submit" class="btn btn-danger"
+                                        style="padding: 4px 10px; font-size: 0.72rem; border-radius: 6px; min-width: unset;">
+                                        ✕
+                                    </button>
+                                </form>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% else %}
-            <div class="alert alert-info" style="margin:0;">No specifications loaded. Run the seed script.</div>
+            <div class="alert alert-info" style="margin:0;">No specifications loaded. Import an Excel QC checklist above.</div>
             {% endif %}
         </div>
     </div>
@@ -62,8 +202,7 @@
     <div id="tab-partners" class="tab-panel">
         <div class="card-grid" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
             {% for p in partners %}
-            <div
-                class="partner-card 
+            <div class="partner-card
                 {% if p.type == 'Standards Body' %}standards{% elif p.type == 'Research Laboratory' %}research{% elif p.type == 'Regulatory Authority' %}regulatory{% else %}testing{% endif %}">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                     <h3 style="color: #333; margin-bottom: 4px; font-size: 1.1rem;">{{ p.institution_name }}</h3>
@@ -81,43 +220,191 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
 {% block scripts %}
+<!-- SheetJS for Excel parsing (client-side, no server upload needed) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const table = document.getElementById('specsTable');
-        if (!table) return;
+document.addEventListener('DOMContentLoaded', () => {
 
-        // Extract distinct products from the table DOM to emulate stateful prop loading
-        const rows = Array.from(table.querySelectorAll('tbody tr'));
-        const products = new Set();
-        rows.forEach(row => {
-            products.add(row.cells[0].innerText.trim());
+    // ── Toggle upload panel ──────────────────────────────────────────────────
+    const toggleBtn = document.getElementById('toggleUpload');
+    const uploadSection = document.getElementById('uploadSection');
+    if (toggleBtn && uploadSection) {
+        toggleBtn.addEventListener('click', () => {
+            const hidden = uploadSection.style.display === 'none' || uploadSection.style.display === '';
+            uploadSection.style.display = hidden ? 'block' : 'none';
+            toggleBtn.textContent = hidden ? 'Hide Upload' : 'Show Upload';
         });
+    }
 
-        // Populate the dropdown
-        const select = document.getElementById('productFilter');
-        while (select.options.length > 1) select.remove(1);  // ← ADD THIS LINE
-        products.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p;
-            opt.textContent = p;
-            select.appendChild(opt);
+    // ── Cancel preview ───────────────────────────────────────────────────────
+    const cancelBtn = document.getElementById('cancelPreview');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            document.getElementById('previewSection').style.display = 'none';
+            document.getElementById('excelFileInput').value = '';
         });
+    }
 
-        // Stateful filtering logic
-        select.addEventListener('change', (e) => {
-            const val = e.target.value;
-            rows.forEach(row => {
-                const productCell = row.cells[0].innerText.trim();
-                if (val === 'All' || productCell === val) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
+    // ── Column name aliases (flexible matching) ──────────────────────────────
+    const COL_MAP = {
+        no:          ['no', '#', 'num', 'number'],
+        checkpoint:  ['checkpoint', 'parameter', 'test name', 'description', 'item'],
+        sample_size: ['sample size', 'sample', 'qty', 'quantity'],
+        test_method: ['test method', 'method', 'procedure'],
+        tolerance:   ['tolerance', 'specification', 'spec', 'limit', 'acceptance criteria'],
+        pass_fail:   ['pass / fail criterion', 'pass/fail criterion', 'pass fail criterion',
+                      'pass/fail', 'criterion', 'criteria', 'result'],
+        defect_type: ['defect type if fail', 'defect type', 'defect', 'failure type', 'severity'],
+    };
+
+    function findCol(headers, aliases) {
+        const normalized = headers.map(h => (h || '').toString().toLowerCase().trim());
+        for (const alias of aliases) {
+            const idx = normalized.indexOf(alias.toLowerCase());
+            if (idx !== -1) return idx;
+        }
+        // partial match fallback
+        for (const alias of aliases) {
+            const idx = normalized.findIndex(h => h.includes(alias.toLowerCase()));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    }
+
+    // ── Parse Excel on button click ───────────────────────────────────────────
+    const parseBtn = document.getElementById('parseExcelBtn');
+    if (parseBtn) {
+        parseBtn.addEventListener('click', () => {
+            const errorEl = document.getElementById('parseError');
+            errorEl.style.display = 'none';
+
+            const productName = document.getElementById('uploadProductName').value.trim();
+            const form        = document.getElementById('uploadForm').value;
+            const file        = document.getElementById('excelFileInput').files[0];
+
+            if (!productName) { showError('Please enter a Product Name.'); return; }
+            if (!file)        { showError('Please select an Excel file.'); return; }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const wb   = XLSX.read(e.target.result, { type: 'binary' });
+                    const ws   = wb.Sheets[wb.SheetNames[0]];
+                    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                    if (data.length < 2) { showError('Sheet appears to be empty.'); return; }
+
+                    // Find header row (first row that contains at least "checkpoint" or "test method")
+                    let headerRowIdx = 0;
+                    for (let i = 0; i < Math.min(5, data.length); i++) {
+                        const rowLower = data[i].map(c => (c || '').toString().toLowerCase());
+                        if (rowLower.some(c => c.includes('checkpoint') || c.includes('test method') || c.includes('parameter'))) {
+                            headerRowIdx = i;
+                            break;
+                        }
+                    }
+
+                    const headers       = data[headerRowIdx];
+                    const colNo         = findCol(headers, COL_MAP.no);
+                    const colCheckpoint = findCol(headers, COL_MAP.checkpoint);
+                    const colSample     = findCol(headers, COL_MAP.sample_size);
+                    const colMethod     = findCol(headers, COL_MAP.test_method);
+                    const colTolerance  = findCol(headers, COL_MAP.tolerance);
+                    const colPassFail   = findCol(headers, COL_MAP.pass_fail);
+                    const colDefect     = findCol(headers, COL_MAP.defect_type);
+
+                    if (colCheckpoint === -1) {
+                        showError('Could not find a "Checkpoint" column. Make sure your header row has a column named Checkpoint (or Parameter, Test Name, etc.).');
+                        return;
+                    }
+
+                    const rows = [];
+                    for (let i = headerRowIdx + 1; i < data.length; i++) {
+                        const row = data[i];
+                        const checkpoint = (row[colCheckpoint] || '').toString().trim();
+                        if (!checkpoint) continue; // skip blank rows
+                        rows.push({
+                            no:                  colNo        !== -1 ? (row[colNo]        || '').toString().trim() : String(rows.length + 1),
+                            checkpoint,
+                            sample_size:         colSample    !== -1 ? (row[colSample]    || '').toString().trim() : '',
+                            test_method:         colMethod    !== -1 ? (row[colMethod]    || '').toString().trim() : '',
+                            tolerance:           colTolerance !== -1 ? (row[colTolerance] || '').toString().trim() : '',
+                            pass_fail_criterion: colPassFail  !== -1 ? (row[colPassFail]  || '').toString().trim() : '',
+                            defect_type:         colDefect    !== -1 ? (row[colDefect]    || '').toString().trim() : '',
+                        });
+                    }
+
+                    if (rows.length === 0) { showError('No data rows found after the header.'); return; }
+
+                    renderPreview(rows, productName, form);
+
+                } catch (err) {
+                    showError('Failed to parse file: ' + err.message);
                 }
-            });
+            };
+            reader.readAsBinaryString(file);
+        });
+    }
+
+    function renderPreview(rows, productName, form) {
+        const tbody = document.getElementById('previewTableBody');
+        tbody.innerHTML = '';
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #eef4fb';
+            [r.no, r.checkpoint, r.sample_size, r.test_method, r.tolerance, r.pass_fail_criterion, r.defect_type]
+                .forEach(val => {
+                    const td = document.createElement('td');
+                    td.style.cssText = 'padding: 7px 10px; vertical-align:top;';
+                    td.textContent = val;
+                    tr.appendChild(td);
+                });
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('previewCount').textContent  = rows.length;
+        document.getElementById('previewCount2').textContent = rows.length;
+        document.getElementById('previewProductLabel').textContent = productName;
+
+        // Populate hidden inputs for form POST
+        document.getElementById('hiddenProductName').value = productName;
+        document.getElementById('hiddenForm').value        = form;
+        document.getElementById('hiddenRowsJson').value    = JSON.stringify(rows);
+
+        document.getElementById('previewSection').style.display = 'block';
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('parseError');
+        el.textContent = '⚠ ' + msg;
+        el.style.display = 'block';
+    }
+
+    // ── Specs table filtering ────────────────────────────────────────────────
+    const table = document.getElementById('specsTable');
+    if (!table) return;
+
+    const rows     = Array.from(table.querySelectorAll('tbody tr'));
+    const products = new Set();
+    rows.forEach(row => products.add(row.cells[1].innerText.trim())); // col 1 = Product
+
+    const select = document.getElementById('productFilter');
+    while (select.options.length > 1) select.remove(1);
+    products.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p; opt.textContent = p;
+        select.appendChild(opt);
+    });
+
+    select.addEventListener('change', e => {
+        const val = e.target.value;
+        rows.forEach(row => {
+            row.style.display = (val === 'All' || row.cells[1].innerText.trim() === val) ? '' : 'none';
         });
     });
+});
 </script>
-{% endblock %}
 {% endblock %}

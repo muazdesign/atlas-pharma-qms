@@ -4,14 +4,20 @@ import pandas as pd
 from dotenv import load_dotenv
 load_dotenv()  # Auto-loads variables from .env file
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from data.db_manager import (
     init_db, get_user, verify_password, insert_review, get_all_reviews,
     get_reviews_by_status, claim_review, resolve_review, insert_capa,
     get_all_capa_logs, get_all_specs, get_all_partners,
     get_category_counts, get_status_counts, get_review_by_id,
     get_all_users, delete_user, create_user,
-    insert_chat_message, get_chat_messages, get_live_operations
+    insert_chat_message, get_chat_messages, get_live_operations,
+    get_distinct_qc_products, get_qc_checklists_by_product,
+    insert_batch_record, get_batch_records_by_batch,
+    get_batch_records_for_spc, get_distinct_checkpoints,
+    insert_spec, delete_spec, update_spec, insert_bulk_specs,
+    get_all_products, get_or_create_product, get_product_by_name,
+    VALID_DEFECT_TYPES
 )
 from services.groq_ai import categorize_and_analyze
 
@@ -39,6 +45,22 @@ def login_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+def role_required(*roles):
+    """Restrict a route to specific user roles."""
+    from functools import wraps
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user' not in session:
+                flash("Please log in to access the portal.", "warning")
+                return redirect(url_for('login'))
+            if session['user']['role'] not in roles:
+                flash("You don't have permission to access this page.", "danger")
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 # ─── Public Routes ───────────────────────────────────────────────────
 
@@ -69,8 +91,10 @@ def feedback():
         )
         flash("Your feedback has been submitted successfully.", "success")
         return redirect(url_for('home'))
-        
-    return render_template('public/feedback.html')
+    
+    # Populate product dropdown from DB
+    products = get_all_products()
+    return render_template('public/feedback.html', products=products)
 
 @app.route('/about')
 def about():
@@ -229,7 +253,9 @@ def claim_ticket(review_id):
 def specs():
     specs_data = get_all_specs()
     partners_data = get_all_partners()
-    return render_template('internal/specs_partners.html', specs=specs_data, partners=partners_data)
+    products = get_all_products()
+    return render_template('internal/specs_partners.html', specs=specs_data, partners=partners_data,
+                           products=products, defect_types=VALID_DEFECT_TYPES)
 
 @app.route('/portal/capa', methods=['GET', 'POST'])
 @login_required
@@ -332,8 +358,6 @@ def chat():
 @app.route('/api/chat', methods=['GET', 'POST'])
 @login_required
 def api_chat():
-    from flask import jsonify
-    
     if request.method == 'POST':
         data = request.get_json()
         if not data or not data.get('message', '').strip():
@@ -359,8 +383,6 @@ def api_chat():
 @app.route('/api/review/<int:review_id>', methods=['GET'])
 @login_required
 def api_review(review_id):
-    from flask import jsonify
-    
     review = get_review_by_id(review_id)
     if not review:
         return jsonify({'error': 'Review not found'}), 404
@@ -373,7 +395,256 @@ def api_review(review_id):
         'ai_category': review['ai_category']
     }), 200
 
+
+# ─── QC Data Entry Routes ────────────────────────────────────────────
+
+@app.route('/portal/qc-entry', methods=['GET', 'POST'])
+@login_required
+def qc_entry():
+    if session['user']['role'] not in ('Quality Manager', 'Executive'):
+        flash("Only Quality Managers can access QC Data Entry.", "danger")
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        batch_number = data.get('batch_number', '').strip()
+        product_name = data.get('product_name', '').strip()
+        tests = data.get('tests', [])
+
+        if not batch_number or not product_name or not tests:
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        saved_count = 0
+        for test in tests:
+            try:
+                insert_batch_record(
+                    batch_number=batch_number,
+                    product_name=product_name,
+                    checklist_id=int(test['checklist_id']),
+                    checkpoint=test['checkpoint'],
+                    individual_values=json.dumps(test['values']),
+                    sample_count=int(test['sample_count']),
+                    mean=float(test['mean']),
+                    range_val=float(test['range']),
+                    tol_min=float(test['tol_min']) if test.get('tol_min') is not None else None,
+                    tol_max=float(test['tol_max']) if test.get('tol_max') is not None else None,
+                    status=test['status'],
+                    tested_by=session['user']['full_name']
+                )
+                saved_count += 1
+            except Exception as e:
+                return jsonify({'error': f'Failed to save {test["checkpoint"]}: {str(e)}'}), 500
+
+        return jsonify({'status': 'ok', 'saved': saved_count}), 201
+
+    products = get_distinct_qc_products()
+    return render_template('internal/qc_entry.html', products=products)
+
+
+@app.route('/api/qc-checklist/<path:product_name>')
+@login_required
+def api_qc_checklist(product_name):
+    """Return QC checklist items for a product as JSON."""
+    checklists = get_qc_checklists_by_product(product_name)
+    result = []
+    for cl in checklists:
+        result.append({
+            'id': cl['id'],
+            'checkpoint': cl['checkpoint'],
+            'sample_size': cl['sample_size'],
+            'sample_count': cl['sample_count'],
+            'tolerance': cl['tolerance'],
+            'unit': cl['unit'],
+            'tol_min': cl['tol_min'],
+            'tol_max': cl['tol_max'],
+            'test_type': cl['test_type'],
+            'test_method': cl['test_method']
+        })
+    return jsonify(result), 200
+
+
+@app.route('/api/batch-records/<path:batch_number>')
+@login_required
+def api_batch_records(batch_number):
+    """Return QC test results for a specific batch."""
+    records = get_batch_records_by_batch(batch_number)
+    result = []
+    for r in records:
+        result.append({
+            'id': r['id'],
+            'batch_number': r['batch_number'],
+            'checkpoint': r['checkpoint'],
+            'individual_values': json.loads(r['individual_values']),
+            'sample_count': r['sample_count'],
+            'mean': r['mean'],
+            'range_val': r['range_val'],
+            'tol_min': r['tol_min'],
+            'tol_max': r['tol_max'],
+            'status': r['status'],
+            'tested_by': r['tested_by'],
+            'tested_at': r['tested_at'],
+            'tolerance': r['tolerance'],
+            'unit': r['unit'],
+            'sample_size': r['sample_size']
+        })
+    return jsonify(result), 200
+
+
+# ─── SPC Dashboard Routes ────────────────────────────────────────────
+
+@app.route('/portal/spc')
+@login_required
+def spc_dashboard():
+    if session['user']['role'] not in ('Quality Manager', 'Executive'):
+        flash("Access denied.", "danger")
+        return redirect(url_for('dashboard'))
+
+    products = get_distinct_qc_products()
+    return render_template('internal/spc_dashboard.html', products=products)
+
+
+@app.route('/api/spc-data')
+@login_required
+def api_spc_data():
+    """Return SPC chart data for a product+checkpoint combination."""
+    product = request.args.get('product', '')
+    checkpoint = request.args.get('checkpoint', '')
+
+    if not product or not checkpoint:
+        return jsonify({'error': 'Product and checkpoint required'}), 400
+
+    records = get_batch_records_for_spc(product, checkpoint)
+    if not records:
+        return jsonify({'batches': [], 'means': [], 'ranges': []}), 200
+
+    batches = [r['batch_number'] for r in records]
+    means = [r['mean'] for r in records]
+    ranges = [r['range_val'] for r in records]
+    sample_count = records[0]['sample_count']
+    tol_min = records[0]['tol_min']
+    tol_max = records[0]['tol_max']
+
+    # Calculate grand mean (X-double-bar) and average range (R-bar)
+    x_double_bar = sum(means) / len(means) if means else 0
+    r_bar = sum(ranges) / len(ranges) if ranges else 0
+
+    # A2, D3, D4 constants for X-bar and R chart (standard SPC tables)
+    spc_constants = {
+        1:  {'A2': 2.660, 'D3': 0.000, 'D4': 3.267},
+        2:  {'A2': 1.880, 'D3': 0.000, 'D4': 3.267},
+        3:  {'A2': 1.023, 'D3': 0.000, 'D4': 2.574},
+        4:  {'A2': 0.729, 'D3': 0.000, 'D4': 2.282},
+        5:  {'A2': 0.577, 'D3': 0.000, 'D4': 2.114},
+        6:  {'A2': 0.483, 'D3': 0.000, 'D4': 2.004},
+        7:  {'A2': 0.419, 'D3': 0.076, 'D4': 1.924},
+        8:  {'A2': 0.373, 'D3': 0.136, 'D4': 1.864},
+        9:  {'A2': 0.337, 'D3': 0.184, 'D4': 1.816},
+        10: {'A2': 0.308, 'D3': 0.223, 'D4': 1.777},
+    }
+
+    n = min(sample_count, 10)
+    constants = spc_constants.get(n, spc_constants[5])
+
+    ucl_xbar = round(x_double_bar + constants['A2'] * r_bar, 4)
+    lcl_xbar = round(x_double_bar - constants['A2'] * r_bar, 4)
+    ucl_r = round(constants['D4'] * r_bar, 4)
+    lcl_r = round(constants['D3'] * r_bar, 4)
+
+    return jsonify({
+        'batches': batches,
+        'means': means,
+        'ranges': ranges,
+        'x_double_bar': round(x_double_bar, 4),
+        'r_bar': round(r_bar, 4),
+        'ucl_xbar': ucl_xbar,
+        'lcl_xbar': lcl_xbar,
+        'ucl_r': ucl_r,
+        'lcl_r': lcl_r,
+        'tol_min': tol_min,
+        'tol_max': tol_max,
+        'sample_count': sample_count
+    }), 200
+
+
+@app.route('/api/checkpoints')
+@login_required
+def api_checkpoints():
+    """Return checkpoints for a product."""
+    product = request.args.get('product', '')
+    if not product:
+        return jsonify([]), 200
+    checkpoints = get_distinct_checkpoints(product)
+    return jsonify(checkpoints), 200
+
+
+@app.route('/portal/specs/import', methods=['POST'])
+@login_required
+def import_specs():
+    """Bulk import specifications from JSON (parsed Excel)."""
+    if session['user']['role'] not in ('Quality Manager', 'Executive'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('specs'))
+
+    product_name = request.form.get('product_name')
+    form = request.form.get('form')
+    rows_json = request.form.get('rows_json')
+
+    if not all([product_name, form, rows_json]):
+        flash("Missing import data.", "warning")
+        return redirect(url_for('specs'))
+
+    try:
+        rows = json.loads(rows_json)
+        insert_bulk_specs(product_name, form, rows)
+        flash(f"Successfully imported {len(rows)} specifications for {product_name}.", "success")
+    except Exception as e:
+        flash(f"Import failed: {str(e)}", "danger")
+
+    return redirect(url_for('specs'))
+
+
+@app.route('/portal/specs/add', methods=['POST'])
+@login_required
+def add_spec():
+    if session['user']['role'] not in ('Quality Manager', 'Executive'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('specs'))
+
+    # Match new schema
+    p_name = request.form.get('product_name')
+    form = request.form.get('form')
+    checkpoint = request.form.get('checkpoint')
+    sample = request.form.get('sample_size')
+    method = request.form.get('test_method')
+    tolerance = request.form.get('tolerance')
+    pass_fail = request.form.get('pass_fail')
+    defect = request.form.get('defect_type')
+
+    if all([p_name, form, checkpoint]):
+        insert_spec(p_name, form, checkpoint, sample, method, tolerance, pass_fail, defect)
+        flash("Specification added.", "success")
+    else:
+        flash("All fields are required.", "warning")
+
+    return redirect(url_for('specs'))
+
+
+@app.route('/portal/specs/delete/<int:spec_id>', methods=['POST'])
+@login_required
+def remove_spec(spec_id):
+    if session['user']['role'] not in ('Quality Manager', 'Executive'):
+        flash("You don't have permission to delete specifications.", "danger")
+        return redirect(url_for('specs'))
+
+    delete_spec(spec_id)
+    flash("Specification removed.", "success")
+    return redirect(url_for('specs'))
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
-    app.run(debug=debug, host='0.0.0.0', port=port)
+    # Enable Debug Mode so templates reload instantly and code changes auto-restart.
+    app.run(debug=True, host='0.0.0.0', port=port)

@@ -1,0 +1,395 @@
+{% extends "base_internal.html" %}
+{% block title %}SPC Dashboard — Atlas QMS{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>📈 Statistical Process Control</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Monitor process stability with X̄ and R control charts across sequential batches.</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card spc-filters" style="padding: 24px; margin-bottom: 24px;">
+    <div class="form-row" style="align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="spcProduct">Product</label>
+            <select id="spcProduct" class="form-control">
+                <option value="" disabled selected>— Select Product —</option>
+                {% for p in products %}
+                <option value="{{ p }}">{{ p }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="spcCheckpoint">Checkpoint</label>
+            <select id="spcCheckpoint" class="form-control" disabled>
+                <option value="" disabled selected>— Select Checkpoint —</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Area -->
+<div id="spcChartsArea" style="display: none;">
+    <!-- Summary KPIs -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 24px;" id="spcKpis">
+    </div>
+
+    <!-- X-bar Chart -->
+    <div class="chart-card" style="margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h3>X̄ (Mean) Control Chart</h3>
+            <div style="display: flex; gap: 16px; font-size: 0.75rem; color: #888;">
+                <span><span style="display:inline-block;width:12px;height:3px;background:#0056b3;vertical-align:middle;margin-right:4px;"></span>X̄</span>
+                <span><span style="display:inline-block;width:12px;height:3px;background:#28a745;vertical-align:middle;margin-right:4px;border-style:dashed;"></span>CL</span>
+                <span><span style="display:inline-block;width:12px;height:3px;background:#dc3545;vertical-align:middle;margin-right:4px;border-style:dashed;"></span>UCL/LCL</span>
+                <span><span style="display:inline-block;width:12px;height:3px;background:#fd7e14;vertical-align:middle;margin-right:4px;border-style:dotted;"></span>Spec Limits</span>
+            </div>
+        </div>
+        <div style="position: relative; height: 350px;">
+            <canvas id="xbarChart"></canvas>
+        </div>
+    </div>
+
+    <!-- R Chart -->
+    <div class="chart-card" style="margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h3>R (Range) Control Chart</h3>
+            <div style="display: flex; gap: 16px; font-size: 0.75rem; color: #888;">
+                <span><span style="display:inline-block;width:12px;height:3px;background:#6f42c1;vertical-align:middle;margin-right:4px;"></span>R</span>
+                <span><span style="display:inline-block;width:12px;height:3px;background:#28a745;vertical-align:middle;margin-right:4px;"></span>R̄</span>
+                <span><span style="display:inline-block;width:12px;height:3px;background:#dc3545;vertical-align:middle;margin-right:4px;"></span>UCL/LCL</span>
+            </div>
+        </div>
+        <div style="position: relative; height: 300px;">
+            <canvas id="rChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Interpretation -->
+    <div class="explain-block" id="spcInterpretation" style="margin-bottom: 28px;"></div>
+</div>
+
+<!-- Empty state -->
+<div id="spcEmptyState" class="card" style="padding: 40px; text-align: center;">
+    <div style="font-size: 3rem; margin-bottom: 16px;">📊</div>
+    <h3 style="color: #555; margin-bottom: 8px;">Select a Product and Checkpoint</h3>
+    <p style="color: #888; font-size: 0.9rem;">Choose a product and test checkpoint above to visualize process stability across batches.</p>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const productSelect = document.getElementById('spcProduct');
+    const checkpointSelect = document.getElementById('spcCheckpoint');
+    const chartsArea = document.getElementById('spcChartsArea');
+    const emptyState = document.getElementById('spcEmptyState');
+
+    let xbarChart = null;
+    let rChart = null;
+
+    // Load checkpoints on product change
+    productSelect.addEventListener('change', async () => {
+        const product = productSelect.value;
+        checkpointSelect.innerHTML = '<option value="" disabled selected>— Loading... —</option>';
+        checkpointSelect.disabled = true;
+
+        try {
+            const res = await fetch(`/api/checkpoints?product=${encodeURIComponent(product)}`);
+            const checkpoints = await res.json();
+
+            checkpointSelect.innerHTML = '<option value="" disabled selected>— Select Checkpoint —</option>';
+            checkpoints.forEach(cp => {
+                const opt = document.createElement('option');
+                opt.value = cp;
+                opt.textContent = cp;
+                checkpointSelect.appendChild(opt);
+            });
+            checkpointSelect.disabled = false;
+        } catch (err) {
+            console.error(err);
+            checkpointSelect.innerHTML = '<option value="">Error loading</option>';
+        }
+    });
+
+    // Load SPC data on checkpoint change
+    checkpointSelect.addEventListener('change', async () => {
+        const product = productSelect.value;
+        const checkpoint = checkpointSelect.value;
+        if (!product || !checkpoint) return;
+
+        try {
+            const res = await fetch(`/api/spc-data?product=${encodeURIComponent(product)}&checkpoint=${encodeURIComponent(checkpoint)}`);
+            const data = await res.json();
+
+            if (!data.batches || data.batches.length === 0) {
+                emptyState.innerHTML = `
+                    <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+                    <h3 style="color: #555; margin-bottom: 8px;">No Data Available</h3>
+                    <p style="color: #888; font-size: 0.9rem;">No batch records found for ${checkpoint}. Run QC tests first.</p>`;
+                emptyState.style.display = 'block';
+                chartsArea.style.display = 'none';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            chartsArea.style.display = 'block';
+
+            renderKPIs(data);
+            renderXbarChart(data);
+            renderRChart(data);
+            renderInterpretation(data, checkpoint);
+
+        } catch (err) {
+            console.error(err);
+        }
+    });
+
+    function renderKPIs(data) {
+        const kpisEl = document.getElementById('spcKpis');
+        kpisEl.innerHTML = `
+            <div class="kpi-card blue">
+                <div class="kpi-value">${data.batches.length}</div>
+                <div class="kpi-label">Batches Tested</div>
+            </div>
+            <div class="kpi-card green">
+                <div class="kpi-value">${data.x_double_bar.toFixed(2)}</div>
+                <div class="kpi-label">X̿ (Grand Mean)</div>
+            </div>
+            <div class="kpi-card orange">
+                <div class="kpi-value">${data.r_bar.toFixed(2)}</div>
+                <div class="kpi-label">R̄ (Avg Range)</div>
+            </div>
+            <div class="kpi-card red">
+                <div class="kpi-value">${data.ucl_xbar.toFixed(2)}</div>
+                <div class="kpi-label">UCL (X̄)</div>
+            </div>
+            <div class="kpi-card" style="border-left: 4px solid #6f42c1;">
+                <div class="kpi-value" style="color: #6f42c1;">${data.lcl_xbar.toFixed(2)}</div>
+                <div class="kpi-label">LCL (X̄)</div>
+            </div>
+        `;
+    }
+
+    function renderXbarChart(data) {
+        const ctx = document.getElementById('xbarChart').getContext('2d');
+
+        if (xbarChart) xbarChart.destroy();
+
+        const datasets = [
+            {
+                label: 'X̄ (Subgroup Mean)',
+                data: data.means,
+                borderColor: '#0056b3',
+                backgroundColor: 'rgba(0, 86, 179, 0.1)',
+                borderWidth: 2.5,
+                pointRadius: 5,
+                pointBackgroundColor: data.means.map(m =>
+                    (m < data.lcl_xbar || m > data.ucl_xbar) ? '#dc3545' :
+                    (m < data.tol_min || m > data.tol_max) ? '#fd7e14' : '#0056b3'
+                ),
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                tension: 0.2,
+                fill: false
+            },
+            {
+                label: 'CL (X̿)',
+                data: Array(data.batches.length).fill(data.x_double_bar),
+                borderColor: '#28a745',
+                borderWidth: 2,
+                borderDash: [8, 4],
+                pointRadius: 0,
+                fill: false
+            },
+            {
+                label: 'UCL',
+                data: Array(data.batches.length).fill(data.ucl_xbar),
+                borderColor: '#dc3545',
+                borderWidth: 1.5,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false
+            },
+            {
+                label: 'LCL',
+                data: Array(data.batches.length).fill(data.lcl_xbar),
+                borderColor: '#dc3545',
+                borderWidth: 1.5,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false
+            }
+        ];
+
+        // Add spec limits if available
+        if (data.tol_max !== null) {
+            datasets.push({
+                label: 'USL (Spec)',
+                data: Array(data.batches.length).fill(data.tol_max),
+                borderColor: '#fd7e14',
+                borderWidth: 1,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                fill: false
+            });
+        }
+        if (data.tol_min !== null) {
+            datasets.push({
+                label: 'LSL (Spec)',
+                data: Array(data.batches.length).fill(data.tol_min),
+                borderColor: '#fd7e14',
+                borderWidth: 1,
+                borderDash: [2, 4],
+                pointRadius: 0,
+                fill: false
+            });
+        }
+
+        xbarChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: data.batches, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        titleFont: { family: 'Inter' },
+                        bodyFont: { family: 'Inter' },
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(0,0,0,0.04)' },
+                        ticks: { font: { family: 'Inter', size: 11 } }
+                    },
+                    y: {
+                        grid: { color: 'rgba(0,0,0,0.06)' },
+                        ticks: { font: { family: 'Inter', size: 11 } }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderRChart(data) {
+        const ctx = document.getElementById('rChart').getContext('2d');
+
+        if (rChart) rChart.destroy();
+
+        rChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.batches,
+                datasets: [
+                    {
+                        label: 'R (Range)',
+                        data: data.ranges,
+                        borderColor: '#6f42c1',
+                        backgroundColor: 'rgba(111, 66, 193, 0.1)',
+                        borderWidth: 2.5,
+                        pointRadius: 5,
+                        pointBackgroundColor: data.ranges.map(r =>
+                            (r > data.ucl_r) ? '#dc3545' : '#6f42c1'
+                        ),
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.2,
+                        fill: false
+                    },
+                    {
+                        label: 'R̄',
+                        data: Array(data.batches.length).fill(data.r_bar),
+                        borderColor: '#28a745',
+                        borderWidth: 2,
+                        borderDash: [8, 4],
+                        pointRadius: 0,
+                        fill: false
+                    },
+                    {
+                        label: 'UCL (R)',
+                        data: Array(data.batches.length).fill(data.ucl_r),
+                        borderColor: '#dc3545',
+                        borderWidth: 1.5,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false
+                    },
+                    {
+                        label: 'LCL (R)',
+                        data: Array(data.batches.length).fill(data.lcl_r),
+                        borderColor: '#dc3545',
+                        borderWidth: 1.5,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        titleFont: { family: 'Inter' },
+                        bodyFont: { family: 'Inter' },
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(0,0,0,0.04)' },
+                        ticks: { font: { family: 'Inter', size: 11 } }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.06)' },
+                        ticks: { font: { family: 'Inter', size: 11 } }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderInterpretation(data, checkpoint) {
+        const el = document.getElementById('spcInterpretation');
+        // Check if any points are outside control limits
+        const oocMeans = data.means.filter(m => m < data.lcl_xbar || m > data.ucl_xbar);
+        const oocRanges = data.ranges.filter(r => r > data.ucl_r);
+
+        let status = '🟢';
+        let msg = `The <strong>${checkpoint}</strong> process appears <strong>stable and in control</strong>. All data points fall within control limits.`;
+
+        if (oocMeans.length > 0 || oocRanges.length > 0) {
+            status = '🔴';
+            msg = `<strong>Attention:</strong> ${oocMeans.length} mean value(s) and ${oocRanges.length} range value(s) fall outside control limits for <strong>${checkpoint}</strong>. Investigate for assignable causes.`;
+        }
+
+        el.innerHTML = `
+            <strong>${status} Process Interpretation</strong>
+            <p style="margin-top: 8px; font-size: 0.88rem; color: #555; line-height: 1.6;">${msg}</p>
+            <div style="margin-top: 12px; font-size: 0.8rem; color: #888;">
+                Sample size: n=${data.sample_count} | Batches analyzed: ${data.batches.length} |
+                Spec range: ${data.tol_min} – ${data.tol_max}
+            </div>
+        `;
+    }
+});
+</script>
+{% endblock %}

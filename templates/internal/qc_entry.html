@@ -1,0 +1,372 @@
+{% extends "base_internal.html" %}
+{% block title %}QC Data Entry — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>🧪 QC Data Entry</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Select a product and batch to begin quality control testing.</p>
+    </div>
+</div>
+
+<!-- Step 1: Product & Batch Selection -->
+<div class="card qc-setup-card" style="padding: 28px; margin-bottom: 24px;">
+    <h3 style="color: #0056b3; margin-bottom: 20px;">📋 Test Setup</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="qcProduct">Product</label>
+            <select id="qcProduct" class="form-control" required>
+                <option value="" disabled selected>— Select Product —</option>
+                {% for p in products %}
+                <option value="{{ p }}">{{ p }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="qcBatch">Batch Number</label>
+            <input type="text" id="qcBatch" class="form-control" placeholder="e.g. BTX-2026-0450" required>
+        </div>
+    </div>
+    <button type="button" id="loadChecklistBtn" class="btn btn-primary" disabled>
+        🔬 Load QC Checklist
+    </button>
+</div>
+
+<!-- Step 2: Dynamic QC Form (rendered by JS) -->
+<div id="qcFormContainer" style="display: none;">
+    <div class="card" style="padding: 24px; margin-bottom: 20px; background: linear-gradient(135deg, #f0f5ff, #e8edf5); border: 1px solid #ccdcf0;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong style="color: #0056b3; font-size: 1.05rem;" id="qcFormTitle">QC Checklist</strong>
+                <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">
+                    Batch: <strong id="qcBatchLabel"></strong>
+                </div>
+            </div>
+            <div id="qcOverallStatus" class="qc-overall-status">
+                <span class="tag" style="background: #e8edf5; color: #666; font-size: 0.85rem; padding: 6px 16px;">Pending</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="qcTestSections"></div>
+
+    <div style="display: flex; gap: 12px; margin-top: 24px;">
+        <button type="button" id="submitQcBtn" class="btn btn-success" disabled>
+            ✅ Submit All QC Results
+        </button>
+        <button type="button" id="resetQcBtn" class="btn btn-secondary">
+            🔄 Reset Form
+        </button>
+    </div>
+</div>
+
+<!-- Success/Error message -->
+<div id="qcResultMsg" style="display: none; margin-top: 20px;"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const productSelect = document.getElementById('qcProduct');
+    const batchInput = document.getElementById('qcBatch');
+    const loadBtn = document.getElementById('loadChecklistBtn');
+    const formContainer = document.getElementById('qcFormContainer');
+    const testSections = document.getElementById('qcTestSections');
+    const submitBtn = document.getElementById('submitQcBtn');
+    const resetBtn = document.getElementById('resetQcBtn');
+    const resultMsg = document.getElementById('qcResultMsg');
+
+    let checklistData = [];
+
+    // Enable Load button when both fields are filled
+    function checkReady() {
+        loadBtn.disabled = !(productSelect.value && batchInput.value.trim());
+    }
+    productSelect.addEventListener('change', checkReady);
+    batchInput.addEventListener('input', checkReady);
+
+    // Load checklist
+    loadBtn.addEventListener('click', async () => {
+        const product = productSelect.value;
+        const batch = batchInput.value.trim();
+        if (!product || !batch) return;
+
+        loadBtn.textContent = '⏳ Loading...';
+        loadBtn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/qc-checklist/${encodeURIComponent(product)}`);
+            checklistData = await res.json();
+
+            if (!checklistData.length) {
+                testSections.innerHTML = '<div class="alert alert-warning">No checklist found for this product.</div>';
+                formContainer.style.display = 'block';
+                return;
+            }
+
+            document.getElementById('qcFormTitle').textContent =
+                product.includes('Tablet') ? '💊 Tablet QC LIST' : '🧴 Syrup QC LIST';
+            document.getElementById('qcBatchLabel').textContent = batch;
+
+            renderChecklist(checklistData);
+            formContainer.style.display = 'block';
+            submitBtn.disabled = false;
+
+        } catch (err) {
+            console.error(err);
+            testSections.innerHTML = '<div class="alert alert-danger">Failed to load checklist. Please try again.</div>';
+            formContainer.style.display = 'block';
+        } finally {
+            loadBtn.textContent = '🔬 Load QC Checklist';
+            loadBtn.disabled = false;
+        }
+    });
+
+    function renderChecklist(items) {
+        testSections.innerHTML = '';
+
+        items.forEach((item, idx) => {
+            const section = document.createElement('div');
+            section.className = 'card qc-section';
+            section.dataset.idx = idx;
+
+            // Build N input fields
+            let inputsHtml = '';
+            for (let i = 0; i < item.sample_count; i++) {
+                inputsHtml += `
+                    <div class="qc-input-cell">
+                        <label class="qc-input-label">#${i + 1}</label>
+                        <input type="number" step="any" class="qc-input-field"
+                               data-section="${idx}" data-input="${i}"
+                               placeholder="—" autocomplete="off">
+                    </div>`;
+            }
+
+            section.innerHTML = `
+                <div class="qc-section-header">
+                    <div>
+                        <strong class="qc-checkpoint-name">${item.checkpoint}</strong>
+                        <div class="qc-section-meta">
+                            <span>📏 ${item.sample_size}</span>
+                            <span>🎯 ${item.tolerance}</span>
+                            <span>🔬 ${item.test_method}</span>
+                        </div>
+                    </div>
+                    <div class="qc-status-badge" id="statusBadge_${idx}">
+                        <span class="tag qc-status-pending">PENDING</span>
+                    </div>
+                </div>
+
+                <div class="qc-inputs-grid" id="inputsGrid_${idx}">
+                    ${inputsHtml}
+                </div>
+
+                <div class="qc-result-row" id="resultRow_${idx}">
+                    <div class="qc-result-item">
+                        <span class="qc-result-label">X̄ (Mean)</span>
+                        <span class="qc-result-value" id="mean_${idx}">—</span>
+                    </div>
+                    <div class="qc-result-item">
+                        <span class="qc-result-label">R (Range)</span>
+                        <span class="qc-result-value" id="range_${idx}">—</span>
+                    </div>
+                    <div class="qc-result-item">
+                        <span class="qc-result-label">Tolerance</span>
+                        <span class="qc-result-value" style="font-size: 0.85rem; color: #555;">
+                            ${item.tol_min != null ? item.tol_min : '—'} – ${item.tol_max != null ? item.tol_max : '—'} ${item.unit}
+                        </span>
+                    </div>
+                </div>
+            `;
+
+            testSections.appendChild(section);
+        });
+
+        // Attach input listeners
+        testSections.querySelectorAll('.qc-input-field').forEach(input => {
+            input.addEventListener('input', () => {
+                const sectionIdx = parseInt(input.dataset.section);
+                recalculate(sectionIdx);
+            });
+        });
+    }
+
+    function recalculate(sectionIdx) {
+        const item = checklistData[sectionIdx];
+        const inputs = testSections.querySelectorAll(`[data-section="${sectionIdx}"]`);
+        const values = [];
+
+        inputs.forEach(inp => {
+            const v = parseFloat(inp.value);
+            if (!isNaN(v)) values.push(v);
+        });
+
+        const meanEl = document.getElementById(`mean_${sectionIdx}`);
+        const rangeEl = document.getElementById(`range_${sectionIdx}`);
+        const statusEl = document.getElementById(`statusBadge_${sectionIdx}`);
+
+        if (values.length === 0) {
+            meanEl.textContent = '—';
+            rangeEl.textContent = '—';
+            statusEl.innerHTML = '<span class="tag qc-status-pending">PENDING</span>';
+            return;
+        }
+
+        const mean = values.reduce((a, b) => a + b, 0) / values.length;
+        const range = Math.max(...values) - Math.min(...values);
+
+        meanEl.textContent = mean.toFixed(2);
+        rangeEl.textContent = range.toFixed(2);
+
+        // Check all values filled
+        if (values.length === item.sample_count) {
+            const pass = (item.tol_min === null || mean >= item.tol_min) &&
+                         (item.tol_max === null || mean <= item.tol_max);
+            if (pass) {
+                statusEl.innerHTML = '<span class="tag qc-status-pass">✅ PASS</span>';
+            } else {
+                statusEl.innerHTML = '<span class="tag qc-status-fail">❌ FAIL</span>';
+            }
+
+            // Also highlight individual inputs that are out of spec
+            inputs.forEach(inp => {
+                const v = parseFloat(inp.value);
+                if (isNaN(v)) return;
+                inp.classList.remove('qc-input-warn', 'qc-input-ok');
+                const inSpec = (item.tol_min === null || v >= item.tol_min) &&
+                               (item.tol_max === null || v <= item.tol_max);
+                inp.classList.add(inSpec ? 'qc-input-ok' : 'qc-input-warn');
+            });
+        } else {
+            statusEl.innerHTML = `<span class="tag qc-status-pending">${values.length}/${item.sample_count}</span>`;
+            inputs.forEach(inp => inp.classList.remove('qc-input-warn', 'qc-input-ok'));
+        }
+
+        updateOverallStatus();
+    }
+
+    function updateOverallStatus() {
+        const badges = testSections.querySelectorAll('[id^="statusBadge_"]');
+        let totalTests = badges.length;
+        let passCount = 0;
+        let failCount = 0;
+        let pendingCount = 0;
+
+        badges.forEach(badge => {
+            const text = badge.textContent.trim();
+            if (text.includes('PASS')) passCount++;
+            else if (text.includes('FAIL')) failCount++;
+            else pendingCount++;
+        });
+
+        const overallEl = document.getElementById('qcOverallStatus');
+        if (failCount > 0) {
+            overallEl.innerHTML = `<span class="tag qc-status-fail" style="font-size: 0.85rem; padding: 6px 16px;">❌ ${failCount} FAILED</span>`;
+        } else if (passCount === totalTests) {
+            overallEl.innerHTML = '<span class="tag qc-status-pass" style="font-size: 0.85rem; padding: 6px 16px;">✅ ALL PASSED</span>';
+        } else {
+            overallEl.innerHTML = `<span class="tag" style="background: #e8edf5; color: #666; font-size: 0.85rem; padding: 6px 16px;">${passCount}/${totalTests} Complete</span>`;
+        }
+    }
+
+    // Submit all QC results
+    submitBtn.addEventListener('click', async () => {
+        const product = productSelect.value;
+        const batch = batchInput.value.trim();
+
+        const tests = [];
+        let allComplete = true;
+
+        checklistData.forEach((item, idx) => {
+            const inputs = testSections.querySelectorAll(`[data-section="${idx}"]`);
+            const values = [];
+            inputs.forEach(inp => {
+                const v = parseFloat(inp.value);
+                if (!isNaN(v)) values.push(v);
+            });
+
+            if (values.length < item.sample_count) {
+                allComplete = false;
+                return;
+            }
+
+            const mean = values.reduce((a, b) => a + b, 0) / values.length;
+            const range = Math.max(...values) - Math.min(...values);
+            const pass = (item.tol_min === null || mean >= item.tol_min) &&
+                         (item.tol_max === null || mean <= item.tol_max);
+
+            tests.push({
+                checklist_id: item.id,
+                checkpoint: item.checkpoint,
+                values: values,
+                sample_count: item.sample_count,
+                mean: Math.round(mean * 100) / 100,
+                range: Math.round(range * 100) / 100,
+                tol_min: item.tol_min,
+                tol_max: item.tol_max,
+                status: pass ? 'PASS' : 'FAIL'
+            });
+        });
+
+        if (!allComplete) {
+            resultMsg.style.display = 'block';
+            resultMsg.className = 'alert alert-warning';
+            resultMsg.textContent = '⚠️ Please fill in all test values before submitting.';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = '⏳ Saving...';
+
+        try {
+            const res = await fetch('/portal/qc-entry', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    batch_number: batch,
+                    product_name: product,
+                    tests: tests
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                resultMsg.style.display = 'block';
+                resultMsg.className = 'alert alert-success';
+                resultMsg.innerHTML = `✅ <strong>${data.saved} test(s)</strong> saved for batch <strong>${batch}</strong>. <a href="/portal/spc" style="color: #155724; text-decoration: underline;">View SPC Dashboard →</a>`;
+
+                // Disable form
+                testSections.querySelectorAll('input').forEach(inp => inp.disabled = true);
+                submitBtn.style.display = 'none';
+            } else {
+                resultMsg.style.display = 'block';
+                resultMsg.className = 'alert alert-danger';
+                resultMsg.textContent = '❌ ' + (data.error || 'Failed to save results.');
+                submitBtn.disabled = false;
+            }
+        } catch (err) {
+            resultMsg.style.display = 'block';
+            resultMsg.className = 'alert alert-danger';
+            resultMsg.textContent = '❌ Network error. Please try again.';
+            submitBtn.disabled = false;
+        } finally {
+            submitBtn.textContent = '✅ Submit All QC Results';
+        }
+    });
+
+    // Reset form
+    resetBtn.addEventListener('click', () => {
+        formContainer.style.display = 'none';
+        testSections.innerHTML = '';
+        resultMsg.style.display = 'none';
+        batchInput.value = '';
+        productSelect.selectedIndex = 0;
+        submitBtn.disabled = true;
+        submitBtn.style.display = '';
+        checklistData = [];
+        loadBtn.disabled = true;
+    });
+});
+</script>
+{% endblock %}
