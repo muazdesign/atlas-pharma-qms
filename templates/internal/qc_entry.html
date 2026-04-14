@@ -27,6 +27,83 @@
             <input type="text" id="qcBatch" class="form-control" placeholder="e.g. BTX-2026-0450" required>
         </div>
     </div>
+
+    <!-- AQL Sampling Parameters -->
+    <div class="aql-section" id="aqlSection">
+        <h4 style="color: #0056b3; margin-bottom: 16px; font-size: 0.95rem;">
+            📐 AQL Sampling Parameters
+            <span style="font-weight: 400; color: #888; font-size: 0.8rem; margin-left: 8px;">ANSI/ASQ Z1.4 / Z1.9</span>
+        </h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="batchSize">Batch Size (Lot Size)</label>
+                <input type="number" id="batchSize" class="form-control" placeholder="e.g. 5000" min="2">
+            </div>
+            <div class="form-group">
+                <label for="inspectionLevel">Inspection Level</label>
+                <select id="inspectionLevel" class="form-control">
+                    <option value="S-1">S-1 (Special — Reduced)</option>
+                    <option value="S-2">S-2 (Special)</option>
+                    <option value="S-3">S-3 (Special)</option>
+                    <option value="S-4">S-4 (Special — Higher)</option>
+                    <option value="I">I (Reduced)</option>
+                    <option value="II" selected>II (Normal)</option>
+                    <option value="III">III (Tightened)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="aqlLevel">AQL Level (%)</label>
+                <select id="aqlLevel" class="form-control">
+                    <option value="0.065">0.065%</option>
+                    <option value="0.10">0.10%</option>
+                    <option value="0.15">0.15%</option>
+                    <option value="0.25">0.25%</option>
+                    <option value="0.40">0.40%</option>
+                    <option value="0.65">0.65%</option>
+                    <option value="1.0" selected>1.0%</option>
+                    <option value="1.5">1.5%</option>
+                    <option value="2.5">2.5%</option>
+                    <option value="4.0">4.0%</option>
+                    <option value="6.5">6.5%</option>
+                    <option value="10.0">10.0%</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="samplingType">Sampling Standard</label>
+                <select id="samplingType" class="form-control">
+                    <option value="attributes">Z1.4 — Attributes</option>
+                    <option value="variables" selected>Z1.9 — Variables</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- AQL Calculation Result -->
+        <div class="aql-result-panel" id="aqlResultPanel" style="display: none;">
+            <div class="aql-result-header">
+                <strong>📊 AQL Sampling Recommendation</strong>
+                <span class="aql-standard-tag" id="aqlStandardTag">ANSI/ASQ Z1.9</span>
+            </div>
+            <div class="aql-result-grid">
+                <div class="aql-result-item">
+                    <span class="aql-result-label">Code Letter</span>
+                    <span class="aql-result-value" id="aqlCodeLetter">—</span>
+                </div>
+                <div class="aql-result-item">
+                    <span class="aql-result-label">Sample Size (AQL)</span>
+                    <span class="aql-result-value aql-highlight" id="aqlSampleSize">—</span>
+                </div>
+                <div class="aql-result-item" id="aqlAcceptRejectBlock">
+                    <span class="aql-result-label">Accept / Reject</span>
+                    <span class="aql-result-value" id="aqlAcceptReject">— / —</span>
+                </div>
+                <div class="aql-result-item" id="aqlKValueBlock" style="display: none;">
+                    <span class="aql-result-label">k Value</span>
+                    <span class="aql-result-value" id="aqlKValue">—</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <button type="button" id="loadChecklistBtn" class="btn btn-primary" disabled>
         🔬 Load QC Checklist
     </button>
@@ -40,6 +117,7 @@
                 <strong style="color: #0056b3; font-size: 1.05rem;" id="qcFormTitle">QC Checklist</strong>
                 <div style="font-size: 0.85rem; color: #666; margin-top: 4px;">
                     Batch: <strong id="qcBatchLabel"></strong>
+                    <span id="qcAqlInfoLabel" style="margin-left: 12px; color: #888;"></span>
                 </div>
             </div>
             <div id="qcOverallStatus" class="qc-overall-status">
@@ -77,7 +155,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetBtn = document.getElementById('resetQcBtn');
     const resultMsg = document.getElementById('qcResultMsg');
 
+    // AQL elements
+    const batchSizeInput = document.getElementById('batchSize');
+    const inspectionLevel = document.getElementById('inspectionLevel');
+    const aqlLevel = document.getElementById('aqlLevel');
+    const samplingType = document.getElementById('samplingType');
+    const aqlResultPanel = document.getElementById('aqlResultPanel');
+
     let checklistData = [];
+    let aqlData = null;
 
     // Enable Load button when both fields are filled
     function checkReady() {
@@ -85,6 +171,58 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     productSelect.addEventListener('change', checkReady);
     batchInput.addEventListener('input', checkReady);
+
+    // AQL calculation on parameter change
+    async function calculateAQL() {
+        const bs = parseInt(batchSizeInput.value);
+        if (!bs || bs < 2) {
+            aqlResultPanel.style.display = 'none';
+            aqlData = null;
+            return;
+        }
+
+        const level = inspectionLevel.value;
+        const aql = aqlLevel.value;
+        const type = samplingType.value;
+
+        try {
+            const res = await fetch(`/api/aql-sample?batch_size=${bs}&level=${level}&aql=${aql}&type=${type}`);
+            aqlData = await res.json();
+
+            if (aqlData.error) {
+                aqlResultPanel.style.display = 'none';
+                return;
+            }
+
+            // Populate AQL result panel
+            document.getElementById('aqlCodeLetter').textContent = aqlData.code_letter;
+            document.getElementById('aqlSampleSize').textContent = aqlData.sample_size;
+            document.getElementById('aqlStandardTag').textContent = aqlData.standard;
+
+            if (type === 'attributes') {
+                document.getElementById('aqlAcceptRejectBlock').style.display = '';
+                document.getElementById('aqlKValueBlock').style.display = 'none';
+                document.getElementById('aqlAcceptReject').textContent =
+                    `${aqlData.accept_number} / ${aqlData.reject_number}`;
+            } else {
+                document.getElementById('aqlAcceptRejectBlock').style.display = 'none';
+                document.getElementById('aqlKValueBlock').style.display = '';
+                document.getElementById('aqlKValue').textContent =
+                    aqlData.k_value !== null ? aqlData.k_value.toFixed(3) : 'N/A';
+            }
+
+            aqlResultPanel.style.display = 'block';
+        } catch (err) {
+            console.error(err);
+            aqlData = null;
+            aqlResultPanel.style.display = 'none';
+        }
+    }
+
+    batchSizeInput.addEventListener('input', calculateAQL);
+    inspectionLevel.addEventListener('change', calculateAQL);
+    aqlLevel.addEventListener('change', calculateAQL);
+    samplingType.addEventListener('change', calculateAQL);
 
     // Load checklist
     loadBtn.addEventListener('click', async () => {
@@ -109,6 +247,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 product.includes('Tablet') ? '💊 Tablet QC LIST' : '🧴 Syrup QC LIST';
             document.getElementById('qcBatchLabel').textContent = batch;
 
+            // Show AQL info in header
+            if (aqlData && aqlData.sample_size) {
+                document.getElementById('qcAqlInfoLabel').textContent =
+                    `| AQL: ${aqlData.standard} | Sample: ${aqlData.sample_size} (Level ${aqlData.inspection_level})`;
+            }
+
             renderChecklist(checklistData);
             formContainer.style.display = 'block';
             submitBtn.disabled = false;
@@ -131,9 +275,30 @@ document.addEventListener('DOMContentLoaded', () => {
             section.className = 'card qc-section';
             section.dataset.idx = idx;
 
+            // Determine effective sample count
+            const refCount = item.sample_count;
+            const aqlCount = (aqlData && aqlData.sample_size) ? aqlData.sample_size : null;
+            let effectiveCount = refCount;
+            let sampleNote = '';
+
+            if (aqlCount && aqlCount !== refCount) {
+                sampleNote = `
+                    <div class="aql-sample-choice" data-section="${idx}">
+                        <span class="aql-choice-label">Sample size:</span>
+                        <label class="aql-choice-option">
+                            <input type="radio" name="sampleChoice_${idx}" value="reference" checked>
+                            <span>📋 Reference (${refCount})</span>
+                        </label>
+                        <label class="aql-choice-option">
+                            <input type="radio" name="sampleChoice_${idx}" value="aql">
+                            <span>📐 AQL (${aqlCount})</span>
+                        </label>
+                    </div>`;
+            }
+
             // Build N input fields
             let inputsHtml = '';
-            for (let i = 0; i < item.sample_count; i++) {
+            for (let i = 0; i < effectiveCount; i++) {
                 inputsHtml += `
                     <div class="qc-input-cell">
                         <label class="qc-input-label">#${i + 1}</label>
@@ -157,6 +322,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="tag qc-status-pending">PENDING</span>
                     </div>
                 </div>
+
+                ${sampleNote}
 
                 <div class="qc-inputs-grid" id="inputsGrid_${idx}">
                     ${inputsHtml}
@@ -190,10 +357,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 recalculate(sectionIdx);
             });
         });
+
+        // Attach AQL sample choice listeners
+        testSections.querySelectorAll('.aql-sample-choice input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const sectionIdx = parseInt(e.target.closest('.aql-sample-choice').dataset.section);
+                const choice = e.target.value;
+                const item = checklistData[sectionIdx];
+                const newCount = choice === 'aql' ? aqlData.sample_size : item.sample_count;
+                rebuildInputs(sectionIdx, newCount);
+            });
+        });
+    }
+
+    function rebuildInputs(sectionIdx, newCount) {
+        const grid = document.getElementById(`inputsGrid_${sectionIdx}`);
+        let html = '';
+        for (let i = 0; i < newCount; i++) {
+            html += `
+                <div class="qc-input-cell">
+                    <label class="qc-input-label">#${i + 1}</label>
+                    <input type="number" step="any" class="qc-input-field"
+                           data-section="${sectionIdx}" data-input="${i}"
+                           placeholder="—" autocomplete="off">
+                </div>`;
+        }
+        grid.innerHTML = html;
+
+        // Re-attach listeners
+        grid.querySelectorAll('.qc-input-field').forEach(input => {
+            input.addEventListener('input', () => recalculate(sectionIdx));
+        });
+
+        // Reset results
+        document.getElementById(`mean_${sectionIdx}`).textContent = '—';
+        document.getElementById(`range_${sectionIdx}`).textContent = '—';
+        document.getElementById(`statusBadge_${sectionIdx}`).innerHTML = '<span class="tag qc-status-pending">PENDING</span>';
+    }
+
+    function getEffectiveSampleCount(sectionIdx) {
+        const radio = document.querySelector(`input[name="sampleChoice_${sectionIdx}"]:checked`);
+        if (radio && radio.value === 'aql' && aqlData) {
+            return aqlData.sample_size;
+        }
+        return checklistData[sectionIdx].sample_count;
     }
 
     function recalculate(sectionIdx) {
         const item = checklistData[sectionIdx];
+        const effectiveCount = getEffectiveSampleCount(sectionIdx);
         const inputs = testSections.querySelectorAll(`[data-section="${sectionIdx}"]`);
         const values = [];
 
@@ -220,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rangeEl.textContent = range.toFixed(2);
 
         // Check all values filled
-        if (values.length === item.sample_count) {
+        if (values.length === effectiveCount) {
             const pass = (item.tol_min === null || mean >= item.tol_min) &&
                          (item.tol_max === null || mean <= item.tol_max);
             if (pass) {
@@ -239,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 inp.classList.add(inSpec ? 'qc-input-ok' : 'qc-input-warn');
             });
         } else {
-            statusEl.innerHTML = `<span class="tag qc-status-pending">${values.length}/${item.sample_count}</span>`;
+            statusEl.innerHTML = `<span class="tag qc-status-pending">${values.length}/${effectiveCount}</span>`;
             inputs.forEach(inp => inp.classList.remove('qc-input-warn', 'qc-input-ok'));
         }
 
@@ -279,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let allComplete = true;
 
         checklistData.forEach((item, idx) => {
+            const effectiveCount = getEffectiveSampleCount(idx);
             const inputs = testSections.querySelectorAll(`[data-section="${idx}"]`);
             const values = [];
             inputs.forEach(inp => {
@@ -286,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!isNaN(v)) values.push(v);
             });
 
-            if (values.length < item.sample_count) {
+            if (values.length < effectiveCount) {
                 allComplete = false;
                 return;
             }
@@ -300,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 checklist_id: item.id,
                 checkpoint: item.checkpoint,
                 values: values,
-                sample_count: item.sample_count,
+                sample_count: effectiveCount,
                 mean: Math.round(mean * 100) / 100,
                 range: Math.round(range * 100) / 100,
                 tol_min: item.tol_min,
@@ -326,6 +539,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     batch_number: batch,
                     product_name: product,
+                    batch_size: parseInt(batchSizeInput.value) || null,
+                    aql_level: aqlData ? `${aqlData.inspection_level} / AQL ${aqlData.aql}` : null,
                     tests: tests
                 })
             });
@@ -365,7 +580,10 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.disabled = true;
         submitBtn.style.display = '';
         checklistData = [];
+        aqlData = null;
         loadBtn.disabled = true;
+        batchSizeInput.value = '';
+        aqlResultPanel.style.display = 'none';
     });
 });
 </script>

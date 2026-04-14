@@ -1,0 +1,251 @@
+{% extends "base_internal.html" %}
+{% block title %}Product Management — Atlas QMS{% endblock %}
+
+{% block content %}
+<div class="portal-topbar">
+    <div>
+        <h1>📦 Product Management</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Manage your product catalog — add, edit, or remove products across the system.</p>
+    </div>
+    <button class="btn btn-primary" onclick="toggleAddModal(true)">
+        ➕ Add New Product
+    </button>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+    <div class="kpi-card blue">
+        <div class="kpi-value">{{ products | length }}</div>
+        <div class="kpi-label">Total Products</div>
+    </div>
+    <div class="kpi-card green">
+        <div class="kpi-value">{{ products | selectattr('is_active', 'equalto', 1) | list | length + products | selectattr('is_active', 'none') | list | length }}</div>
+        <div class="kpi-label">Active</div>
+    </div>
+    <div class="kpi-card orange">
+        <div class="kpi-value">{{ products | selectattr('form', 'equalto', 'Tablet') | list | length }}</div>
+        <div class="kpi-label">Tablets</div>
+    </div>
+    <div class="kpi-card" style="border-left: 4px solid #6f42c1;">
+        <div class="kpi-value" style="color: #6f42c1;">{{ products | selectattr('form', 'equalto', 'Syrup') | list | length }}</div>
+        <div class="kpi-label">Syrups</div>
+    </div>
+</div>
+
+<!-- Product Cards Grid -->
+<div class="pm-grid">
+    {% for product in products %}
+    <div class="pm-card" id="productCard_{{ product.id }}">
+        <div class="pm-card-image">
+            {% if product.image_url %}
+            <img src="{{ product.image_url }}" alt="{{ product.product_name }}">
+            {% else %}
+            <div class="pm-placeholder-img">
+                <span>📦</span>
+            </div>
+            {% endif %}
+            <div class="pm-card-status {{ 'active' if product.is_active != 0 else 'inactive' }}">
+                {{ 'Active' if product.is_active != 0 else 'Inactive' }}
+            </div>
+        </div>
+        <div class="pm-card-body">
+            <h3 class="pm-card-title">{{ product.product_name }}</h3>
+            <div class="pm-card-meta">
+                {% if product.form %}
+                <span class="pm-tag">{{ product.form }}</span>
+                {% endif %}
+                {% if product.category %}
+                <span class="pm-tag pm-tag-blue">{{ product.category }}</span>
+                {% endif %}
+            </div>
+            {% if product.description %}
+            <p class="pm-card-desc">{{ product.description }}</p>
+            {% else %}
+            <p class="pm-card-desc" style="color: #aaa; font-style: italic;">No description yet</p>
+            {% endif %}
+        </div>
+        <div class="pm-card-actions">
+            <button class="btn btn-sm btn-outline" onclick="openEditModal({{ product.id }}, '{{ product.product_name | e }}', '{{ product.form or '' | e }}', '{{ product.description or '' | e }}', '{{ product.category or '' | e }}', '{{ product.buy_link or '' | e }}', '{{ product.dosage_form or '' | e }}', '{{ product.image_url or '' | e }}')">
+                ✏️ Edit
+            </button>
+            <form method="POST" action="/portal/products/upload-image/{{ product.id }}" enctype="multipart/form-data" class="pm-upload-form" style="display: inline;">
+                <label class="btn btn-sm btn-outline" style="cursor: pointer;">
+                    📷 Image
+                    <input type="file" name="image" accept="image/*" style="display: none;" onchange="this.form.submit()">
+                </label>
+            </form>
+            <form method="POST" action="/portal/products/delete/{{ product.id }}" onsubmit="return confirm('Deactivate this product?');" style="display: inline;">
+                <button type="submit" class="btn btn-sm btn-danger-outline">🗑️ Delete</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if not products %}
+    <div class="pm-empty-state">
+        <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+        <h3 style="color: #555;">No Products Yet</h3>
+        <p style="color: #888;">Click "Add New Product" to create your first product.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Product Modal -->
+<div class="modal-overlay" id="addProductModal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>➕ Add New Product</h3>
+            <button class="modal-close" onclick="toggleAddModal(false)">&times;</button>
+        </div>
+        <form method="POST" action="/portal/products/add" enctype="multipart/form-data">
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Product Name *</label>
+                        <input type="text" name="product_name" class="form-control" placeholder="e.g. Paracetamol Tablet 500 mg" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Dosage Form</label>
+                        <select name="form" class="form-control">
+                            <option value="">— Select —</option>
+                            <option value="Tablet">Tablet</option>
+                            <option value="Syrup">Syrup</option>
+                            <option value="Capsule">Capsule</option>
+                            <option value="Injection">Injection</option>
+                            <option value="Cream">Cream</option>
+                            <option value="Ointment">Ointment</option>
+                            <option value="Suspension">Suspension</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" class="form-control" rows="3" placeholder="Brief product description..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <input type="text" name="category" class="form-control" placeholder="e.g. Pain Relief, Supplements">
+                    </div>
+                    <div class="form-group">
+                        <label>Buy Link (URL)</label>
+                        <input type="url" name="buy_link" class="form-control" placeholder="https://www.trendyol.com/...">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Product Image</label>
+                    <input type="file" name="image" accept="image/*" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="toggleAddModal(false)">Cancel</button>
+                <button type="submit" class="btn btn-primary">💾 Save Product</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Product Modal -->
+<div class="modal-overlay" id="editProductModal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>✏️ Edit Product</h3>
+            <button class="modal-close" onclick="toggleEditModal(false)">&times;</button>
+        </div>
+        <form method="POST" id="editProductForm" enctype="multipart/form-data">
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Product Name *</label>
+                        <input type="text" name="product_name" id="editName" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Dosage Form</label>
+                        <select name="form" id="editForm" class="form-control">
+                            <option value="">— Select —</option>
+                            <option value="Tablet">Tablet</option>
+                            <option value="Syrup">Syrup</option>
+                            <option value="Capsule">Capsule</option>
+                            <option value="Injection">Injection</option>
+                            <option value="Cream">Cream</option>
+                            <option value="Ointment">Ointment</option>
+                            <option value="Suspension">Suspension</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" id="editDesc" class="form-control" rows="3"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <input type="text" name="category" id="editCategory" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Buy Link (URL)</label>
+                        <input type="url" name="buy_link" id="editBuyLink" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Update Image</label>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <img id="editImagePreview" src="" alt="" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px; display: none; border: 1px solid #ddd;">
+                        <input type="file" name="image" accept="image/*" class="form-control" style="flex: 1;">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="toggleEditModal(false)">Cancel</button>
+                <button type="submit" class="btn btn-primary">💾 Update Product</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleAddModal(show) {
+    document.getElementById('addProductModal').style.display = show ? 'flex' : 'none';
+}
+
+function toggleEditModal(show) {
+    document.getElementById('editProductModal').style.display = show ? 'flex' : 'none';
+}
+
+function openEditModal(id, name, form, desc, category, buyLink, dosageForm, imageUrl) {
+    document.getElementById('editProductForm').action = `/portal/products/edit/${id}`;
+    document.getElementById('editName').value = name;
+    document.getElementById('editDesc').value = desc;
+    document.getElementById('editCategory').value = category;
+    document.getElementById('editBuyLink').value = buyLink;
+
+    // Set form dropdown
+    const formSelect = document.getElementById('editForm');
+    for (let opt of formSelect.options) {
+        opt.selected = (opt.value === form);
+    }
+
+    // Image preview
+    const preview = document.getElementById('editImagePreview');
+    if (imageUrl) {
+        preview.src = imageUrl;
+        preview.style.display = 'block';
+    } else {
+        preview.style.display = 'none';
+    }
+
+    toggleEditModal(true);
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.style.display = 'none';
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -16,13 +16,18 @@ from data.db_manager import (
     insert_batch_record, get_batch_records_by_batch,
     get_batch_records_for_spc, get_distinct_checkpoints,
     insert_spec, delete_spec, update_spec, insert_bulk_specs,
-    get_all_products, get_or_create_product, get_product_by_name,
+    get_all_products, get_active_products, get_or_create_product,
+    get_product_by_name, get_product_by_id, update_product,
+    delete_product, get_distinct_batches,
     VALID_DEFECT_TYPES
 )
+from data.aql_tables import get_aql_sample_size, get_available_aql_values, get_available_inspection_levels
 from services.groq_ai import categorize_and_analyze
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "atlas_pharma_secret_key_2026_demo")
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 
 # Initialize DB and seed data on startup
 init_db()
@@ -70,7 +75,8 @@ def home():
 
 @app.route('/catalog')
 def catalog():
-    return render_template('public/catalog.html')
+    products = get_active_products()
+    return render_template('public/catalog.html', products=products)
 
 @app.route('/feedback', methods=['GET', 'POST'])
 def feedback():
@@ -578,6 +584,225 @@ def api_checkpoints():
         return jsonify([]), 200
     checkpoints = get_distinct_checkpoints(product)
     return jsonify(checkpoints), 200
+
+
+@app.route('/api/batches')
+@login_required
+def api_batches():
+    """Return distinct batch numbers for a product."""
+    product = request.args.get('product', '')
+    if not product:
+        return jsonify([]), 200
+    batches = get_distinct_batches(product)
+    return jsonify(batches), 200
+
+
+@app.route('/api/batch-summary/<path:batch_number>')
+@login_required
+def api_batch_summary(batch_number):
+    """Return all checkpoint results for a batch, with summary stats."""
+    records = get_batch_records_by_batch(batch_number)
+    if not records:
+        return jsonify({'batch_number': batch_number, 'tests': [], 'summary': {}}), 200
+
+    tests = []
+    pass_count = 0
+    fail_count = 0
+    for r in records:
+        test = {
+            'id': r['id'],
+            'checkpoint': r['checkpoint'],
+            'individual_values': json.loads(r['individual_values']),
+            'sample_count': r['sample_count'],
+            'mean': r['mean'],
+            'range_val': r['range_val'],
+            'tol_min': r['tol_min'],
+            'tol_max': r['tol_max'],
+            'status': r['status'],
+            'tested_by': r['tested_by'],
+            'tested_at': r['tested_at'],
+            'tolerance': r.get('tolerance', ''),
+            'unit': r.get('unit', ''),
+            'sample_size': r.get('sample_size', ''),
+        }
+        tests.append(test)
+        if r['status'] == 'PASS':
+            pass_count += 1
+        else:
+            fail_count += 1
+
+    return jsonify({
+        'batch_number': batch_number,
+        'product_name': records[0]['product_name'] if records else '',
+        'tests': tests,
+        'summary': {
+            'total': len(tests),
+            'passed': pass_count,
+            'failed': fail_count,
+            'tested_by': records[0]['tested_by'] if records else '',
+            'tested_at': records[0]['tested_at'] if records else '',
+        }
+    }), 200
+
+
+# ─── AQL Sampling API ────────────────────────────────────────────────
+
+@app.route('/api/aql-sample')
+@login_required
+def api_aql_sample():
+    """Calculate AQL sample size per ANSI/ASQ Z1.4 or Z1.9."""
+    try:
+        batch_size = int(request.args.get('batch_size', 0))
+        level = request.args.get('level', 'II')
+        aql = float(request.args.get('aql', 1.0))
+        sampling_type = request.args.get('type', 'attributes')
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid parameters'}), 400
+
+    if batch_size < 2:
+        return jsonify({'error': 'Batch size must be at least 2'}), 400
+
+    result = get_aql_sample_size(batch_size, level, aql, sampling_type)
+    return jsonify(result), 200
+
+
+# ─── Product Management Routes (Executive) ───────────────────────────
+
+@app.route('/portal/products')
+@login_required
+def product_management():
+    if session['user']['role'] != 'Executive':
+        flash("Only Executives can access Product Management.", "danger")
+        return redirect(url_for('dashboard'))
+    products = get_all_products()
+    return render_template('internal/product_management.html', products=products)
+
+
+@app.route('/portal/products/add', methods=['POST'])
+@login_required
+def add_product():
+    if session['user']['role'] != 'Executive':
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('dashboard'))
+
+    name = request.form.get('product_name', '').strip()
+    form = request.form.get('form', '').strip()
+    description = request.form.get('description', '').strip()
+    category = request.form.get('category', '').strip()
+    buy_link = request.form.get('buy_link', '').strip()
+    dosage_form = request.form.get('dosage_form', '').strip()
+
+    if not name:
+        flash("Product name is required.", "warning")
+        return redirect(url_for('product_management'))
+
+    product_id = get_or_create_product(name, form)
+    update_product(
+        product_id,
+        description=description or None,
+        category=category or None,
+        buy_link=buy_link or None,
+        dosage_form=dosage_form or None,
+        is_active=1,
+    )
+
+    # Handle image upload
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename:
+            ext = file.filename.rsplit('.', 1)[-1].lower()
+            if ext in ALLOWED_IMAGE_EXTENSIONS:
+                upload_dir = os.path.join(app.static_folder, 'images', 'products')
+                os.makedirs(upload_dir, exist_ok=True)
+                filename = f"product_{product_id}.{ext}"
+                file.save(os.path.join(upload_dir, filename))
+                update_product(product_id, image_url=f"/static/images/products/{filename}")
+
+    flash(f"Product '{name}' added successfully.", "success")
+    return redirect(url_for('product_management'))
+
+
+@app.route('/portal/products/edit/<int:product_id>', methods=['POST'])
+@login_required
+def edit_product(product_id):
+    if session['user']['role'] != 'Executive':
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('dashboard'))
+
+    name = request.form.get('product_name', '').strip()
+    form = request.form.get('form', '').strip()
+    description = request.form.get('description', '').strip()
+    category = request.form.get('category', '').strip()
+    buy_link = request.form.get('buy_link', '').strip()
+    dosage_form = request.form.get('dosage_form', '').strip()
+
+    update_product(
+        product_id,
+        product_name=name or None,
+        form=form or None,
+        description=description or None,
+        category=category or None,
+        buy_link=buy_link or None,
+        dosage_form=dosage_form or None,
+    )
+
+    # Handle image upload
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and file.filename:
+            ext = file.filename.rsplit('.', 1)[-1].lower()
+            if ext in ALLOWED_IMAGE_EXTENSIONS:
+                upload_dir = os.path.join(app.static_folder, 'images', 'products')
+                os.makedirs(upload_dir, exist_ok=True)
+                filename = f"product_{product_id}.{ext}"
+                file.save(os.path.join(upload_dir, filename))
+                update_product(product_id, image_url=f"/static/images/products/{filename}")
+
+    flash(f"Product updated successfully.", "success")
+    return redirect(url_for('product_management'))
+
+
+@app.route('/portal/products/delete/<int:product_id>', methods=['POST'])
+@login_required
+def delete_product_route(product_id):
+    if session['user']['role'] != 'Executive':
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('dashboard'))
+
+    if session['user']['id'] == product_id:
+        flash("Cannot delete.", "warning")
+        return redirect(url_for('product_management'))
+
+    delete_product(product_id)
+    flash("Product deactivated.", "success")
+    return redirect(url_for('product_management'))
+
+
+@app.route('/portal/products/upload-image/<int:product_id>', methods=['POST'])
+@login_required
+def upload_product_image(product_id):
+    if session['user']['role'] != 'Executive':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image file provided'}), 400
+
+    file = request.files['image']
+    if not file.filename:
+        return jsonify({'error': 'No file selected'}), 400
+
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return jsonify({'error': f'Invalid file type. Allowed: {ALLOWED_IMAGE_EXTENSIONS}'}), 400
+
+    upload_dir = os.path.join(app.static_folder, 'images', 'products')
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = f"product_{product_id}.{ext}"
+    file.save(os.path.join(upload_dir, filename))
+    image_url = f"/static/images/products/{filename}"
+    update_product(product_id, image_url=image_url)
+
+    return jsonify({'status': 'ok', 'image_url': image_url}), 200
 
 
 @app.route('/portal/specs/import', methods=['POST'])

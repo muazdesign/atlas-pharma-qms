@@ -13,8 +13,24 @@
     </div>
 </div>
 
-<!-- Filters -->
-<div class="card spc-filters" style="padding: 24px; margin-bottom: 24px;">
+<!-- View Mode Toggle -->
+<div class="card" style="padding: 16px 24px; margin-bottom: 20px;">
+    <div class="spc-mode-toggle">
+        <label class="spc-mode-option active" id="modeCheckpoint">
+            <input type="radio" name="spcMode" value="checkpoint" checked>
+            <span>📊 By Checkpoint</span>
+            <small>Track one test across batches</small>
+        </label>
+        <label class="spc-mode-option" id="modeBatch">
+            <input type="radio" name="spcMode" value="batch">
+            <span>📋 By Batch</span>
+            <small>View all tests for one batch</small>
+        </label>
+    </div>
+</div>
+
+<!-- ===== CHECKPOINT MODE FILTERS ===== -->
+<div class="card spc-filters" style="padding: 24px; margin-bottom: 24px;" id="checkpointFilters">
     <div class="form-row" style="align-items: end;">
         <div class="form-group" style="margin-bottom: 0;">
             <label for="spcProduct">Product</label>
@@ -34,7 +50,28 @@
     </div>
 </div>
 
-<!-- Chart Area -->
+<!-- ===== BATCH MODE FILTERS ===== -->
+<div class="card spc-filters" style="padding: 24px; margin-bottom: 24px; display: none;" id="batchFilters">
+    <div class="form-row" style="align-items: end;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="spcBatchProduct">Product</label>
+            <select id="spcBatchProduct" class="form-control">
+                <option value="" disabled selected>— Select Product —</option>
+                {% for p in products %}
+                <option value="{{ p }}">{{ p }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="spcBatchNumber">Batch Number</label>
+            <select id="spcBatchNumber" class="form-control" disabled>
+                <option value="" disabled selected>— Select Batch —</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- ===== CHECKPOINT MODE: Chart Area ===== -->
 <div id="spcChartsArea" style="display: none;">
     <!-- Summary KPIs -->
     <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 24px;" id="spcKpis">
@@ -75,6 +112,34 @@
     <div class="explain-block" id="spcInterpretation" style="margin-bottom: 28px;"></div>
 </div>
 
+<!-- ===== BATCH MODE: Results Area ===== -->
+<div id="batchResultsArea" style="display: none;">
+    <!-- Batch Summary KPIs -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;" id="batchKpis"></div>
+
+    <!-- Batch Results Table -->
+    <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+        <table class="data-table" id="batchResultsTable">
+            <thead>
+                <tr>
+                    <th>Checkpoint</th>
+                    <th>Sample Size</th>
+                    <th>Values</th>
+                    <th>Mean (X̄)</th>
+                    <th>Range (R)</th>
+                    <th>Tolerance</th>
+                    <th>Status</th>
+                    <th>Tested By</th>
+                </tr>
+            </thead>
+            <tbody id="batchResultsBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Batch Interpretation -->
+    <div class="explain-block" id="batchInterpretation" style="margin-bottom: 28px;"></div>
+</div>
+
 <!-- Empty state -->
 <div id="spcEmptyState" class="card" style="padding: 40px; text-align: center;">
     <div style="font-size: 3rem; margin-bottom: 16px;">📊</div>
@@ -87,13 +152,58 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // Mode elements
+    const modeRadios = document.querySelectorAll('input[name="spcMode"]');
+    const checkpointFilters = document.getElementById('checkpointFilters');
+    const batchFilters = document.getElementById('batchFilters');
+    const chartsArea = document.getElementById('spcChartsArea');
+    const batchResultsArea = document.getElementById('batchResultsArea');
+    const emptyState = document.getElementById('spcEmptyState');
+
+    // Checkpoint mode elements
     const productSelect = document.getElementById('spcProduct');
     const checkpointSelect = document.getElementById('spcCheckpoint');
-    const chartsArea = document.getElementById('spcChartsArea');
-    const emptyState = document.getElementById('spcEmptyState');
+
+    // Batch mode elements
+    const batchProductSelect = document.getElementById('spcBatchProduct');
+    const batchNumberSelect = document.getElementById('spcBatchNumber');
 
     let xbarChart = null;
     let rChart = null;
+    let currentMode = 'checkpoint';
+
+    // ── Mode Toggle ──
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            currentMode = radio.value;
+            document.querySelectorAll('.spc-mode-option').forEach(el => el.classList.remove('active'));
+            radio.closest('.spc-mode-option').classList.add('active');
+
+            if (currentMode === 'checkpoint') {
+                checkpointFilters.style.display = 'block';
+                batchFilters.style.display = 'none';
+                batchResultsArea.style.display = 'none';
+                chartsArea.style.display = 'none';
+                emptyState.style.display = 'block';
+                emptyState.innerHTML = `
+                    <div style="font-size: 3rem; margin-bottom: 16px;">📊</div>
+                    <h3 style="color: #555; margin-bottom: 8px;">Select a Product and Checkpoint</h3>
+                    <p style="color: #888; font-size: 0.9rem;">Choose a product and test checkpoint above to visualize process stability across batches.</p>`;
+            } else {
+                checkpointFilters.style.display = 'none';
+                batchFilters.style.display = 'block';
+                chartsArea.style.display = 'none';
+                batchResultsArea.style.display = 'none';
+                emptyState.style.display = 'block';
+                emptyState.innerHTML = `
+                    <div style="font-size: 3rem; margin-bottom: 16px;">📋</div>
+                    <h3 style="color: #555; margin-bottom: 8px;">Select a Product and Batch</h3>
+                    <p style="color: #888; font-size: 0.9rem;">Choose a product and batch number to view all test results at a glance.</p>`;
+            }
+        });
+    });
+
+    // ── CHECKPOINT MODE ──
 
     // Load checkpoints on product change
     productSelect.addEventListener('change', async () => {
@@ -141,6 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             emptyState.style.display = 'none';
             chartsArea.style.display = 'block';
+            batchResultsArea.style.display = 'none';
 
             renderKPIs(data);
             renderXbarChart(data);
@@ -151,6 +262,66 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(err);
         }
     });
+
+    // ── BATCH MODE ──
+
+    // Load batch numbers on product change
+    batchProductSelect.addEventListener('change', async () => {
+        const product = batchProductSelect.value;
+        batchNumberSelect.innerHTML = '<option value="" disabled selected>— Loading... —</option>';
+        batchNumberSelect.disabled = true;
+
+        try {
+            const res = await fetch(`/api/batches?product=${encodeURIComponent(product)}`);
+            const batches = await res.json();
+
+            batchNumberSelect.innerHTML = '<option value="" disabled selected>— Select Batch —</option>';
+            batches.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b;
+                batchNumberSelect.appendChild(opt);
+            });
+            batchNumberSelect.disabled = false;
+        } catch (err) {
+            console.error(err);
+            batchNumberSelect.innerHTML = '<option value="">Error loading</option>';
+        }
+    });
+
+    // Load batch results
+    batchNumberSelect.addEventListener('change', async () => {
+        const batch = batchNumberSelect.value;
+        if (!batch) return;
+
+        try {
+            const res = await fetch(`/api/batch-summary/${encodeURIComponent(batch)}`);
+            const data = await res.json();
+
+            if (!data.tests || data.tests.length === 0) {
+                emptyState.innerHTML = `
+                    <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+                    <h3 style="color: #555; margin-bottom: 8px;">No Test Results</h3>
+                    <p style="color: #888; font-size: 0.9rem;">No QC records found for batch ${batch}.</p>`;
+                emptyState.style.display = 'block';
+                batchResultsArea.style.display = 'none';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            chartsArea.style.display = 'none';
+            batchResultsArea.style.display = 'block';
+
+            renderBatchKPIs(data);
+            renderBatchTable(data);
+            renderBatchInterpretation(data);
+
+        } catch (err) {
+            console.error(err);
+        }
+    });
+
+    // ── RENDERING FUNCTIONS (Checkpoint Mode) ──
 
     function renderKPIs(data) {
         const kpisEl = document.getElementById('spcKpis');
@@ -369,7 +540,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInterpretation(data, checkpoint) {
         const el = document.getElementById('spcInterpretation');
-        // Check if any points are outside control limits
         const oocMeans = data.means.filter(m => m < data.lcl_xbar || m > data.ucl_xbar);
         const oocRanges = data.ranges.filter(r => r > data.ucl_r);
 
@@ -389,6 +559,86 @@ document.addEventListener('DOMContentLoaded', () => {
                 Spec range: ${data.tol_min} – ${data.tol_max}
             </div>
         `;
+    }
+
+    // ── RENDERING FUNCTIONS (Batch Mode) ──
+
+    function renderBatchKPIs(data) {
+        const s = data.summary;
+        const allPass = s.failed === 0;
+        document.getElementById('batchKpis').innerHTML = `
+            <div class="kpi-card blue">
+                <div class="kpi-value">${s.total}</div>
+                <div class="kpi-label">Total Tests</div>
+            </div>
+            <div class="kpi-card green">
+                <div class="kpi-value">${s.passed}</div>
+                <div class="kpi-label">Passed</div>
+            </div>
+            <div class="kpi-card red">
+                <div class="kpi-value">${s.failed}</div>
+                <div class="kpi-label">Failed</div>
+            </div>
+            <div class="kpi-card ${allPass ? 'green' : 'red'}">
+                <div class="kpi-value">${allPass ? '✅' : '⚠️'}</div>
+                <div class="kpi-label">${allPass ? 'Batch Passed' : 'Issues Found'}</div>
+            </div>
+        `;
+    }
+
+    function renderBatchTable(data) {
+        const tbody = document.getElementById('batchResultsBody');
+        tbody.innerHTML = '';
+
+        data.tests.forEach(test => {
+            const valStr = test.individual_values.map(v => v.toFixed(2)).join(', ');
+            const tolStr = (test.tol_min !== null ? test.tol_min : '—') + ' – ' + (test.tol_max !== null ? test.tol_max : '—') + ' ' + (test.unit || '');
+            const statusClass = test.status === 'PASS' ? 'batch-pass' : 'batch-fail';
+            const statusIcon = test.status === 'PASS' ? '✅' : '❌';
+
+            const tr = document.createElement('tr');
+            tr.className = statusClass;
+            tr.innerHTML = `
+                <td><strong>${test.checkpoint}</strong></td>
+                <td>${test.sample_size || test.sample_count}</td>
+                <td class="batch-values-cell">${valStr}</td>
+                <td><strong>${test.mean.toFixed(2)}</strong></td>
+                <td>${test.range_val.toFixed(2)}</td>
+                <td>${tolStr}</td>
+                <td><span class="tag ${test.status === 'PASS' ? 'qc-status-pass' : 'qc-status-fail'}">${statusIcon} ${test.status}</span></td>
+                <td>${test.tested_by}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderBatchInterpretation(data) {
+        const el = document.getElementById('batchInterpretation');
+        const s = data.summary;
+
+        if (s.failed === 0) {
+            el.innerHTML = `
+                <strong>🟢 Batch Assessment: ALL PASSED</strong>
+                <p style="margin-top: 8px; font-size: 0.88rem; color: #555; line-height: 1.6;">
+                    Batch <strong>${data.batch_number}</strong> has passed all <strong>${s.total}</strong> quality control tests.
+                    The batch meets all specification requirements and is eligible for release.
+                </p>
+                <div style="margin-top: 12px; font-size: 0.8rem; color: #888;">
+                    Tested by: ${s.tested_by} | Date: ${s.tested_at}
+                </div>
+            `;
+        } else {
+            el.innerHTML = `
+                <strong>🔴 Batch Assessment: ISSUES FOUND</strong>
+                <p style="margin-top: 8px; font-size: 0.88rem; color: #555; line-height: 1.6;">
+                    Batch <strong>${data.batch_number}</strong> has <strong>${s.failed} failed test(s)</strong> out of ${s.total} total.
+                    Investigate root causes and consider initiating a CAPA before release decision.
+                </p>
+                <div style="margin-top: 12px; font-size: 0.8rem; color: #888;">
+                    Tested by: ${s.tested_by} | Date: ${s.tested_at}
+                </div>
+            `;
+        }
     }
 });
 </script>

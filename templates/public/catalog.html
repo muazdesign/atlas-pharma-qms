@@ -40,53 +40,53 @@
         <!-- Product Grid -->
         <main class="catalog-main">
             <div class="ecommerce-grid">
-                <!-- Product 1 -->
+                {% for product in products %}
                 <div class="ecommerce-card">
                     <div class="card-image-wrapper">
-                        <img src="https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=400&q=80" alt="Paracetamol Tablets" class="card-img">
+                        {% if product.image_url %}
+                        <img src="{{ product.image_url }}" alt="{{ product.product_name }}" class="card-img">
+                        {% else %}
+                        <img src="https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=400&q=80" alt="{{ product.product_name }}" class="card-img">
+                        {% endif %}
                         <span class="ecommerce-badge">In Stock</span>
                     </div>
                     <div class="card-body">
-                        <h3>Paracetamol Tablet 500 mg</h3>
-                        <p class="card-desc">White to off-white, round, biconvex film-coated tablets for effective pain relief. USP Compliant.</p>
+                        <h3>{{ product.product_name }}</h3>
+                        <p class="card-desc">{{ product.description or 'High-quality pharmaceutical product. USP Compliant.' }}</p>
                         <div class="card-footer">
+                            {% if product.buy_link %}
+                            <a href="{{ product.buy_link }}" target="_blank" class="btn btn-orange btn-block">🛒 Buy on Trendyol</a>
+                            {% else %}
                             <a href="https://www.trendyol.com" target="_blank" class="btn btn-orange btn-block">🛒 Buy on Trendyol</a>
+                            {% endif %}
                             <details class="specs-details">
                                 <summary>📄 View Quality Specifications</summary>
                                 <div class="specs-content">
-                                    <p><strong>Appearance:</strong> White, biconvex</p>
-                                    <p><strong>Assay:</strong> 95.0 – 105.0%</p>
-                                    <p><strong>Dissolution:</strong> ≥ 80% in 30 min</p>
-                                    <p><strong>Pack:</strong> 20 tabs / blister</p>
+                                    {% if product.form %}
+                                    <p><strong>Form:</strong> {{ product.form }}</p>
+                                    {% endif %}
+                                    {% if product.category %}
+                                    <p><strong>Category:</strong> {{ product.category }}</p>
+                                    {% endif %}
+                                    {% if product.specifications %}
+                                    <p>{{ product.specifications }}</p>
+                                    {% else %}
+                                    <p><strong>Standard:</strong> USP Compliant</p>
+                                    {% endif %}
                                 </div>
                             </details>
                         </div>
                     </div>
                 </div>
+                {% endfor %}
 
-                <!-- Product 2 -->
-                <div class="ecommerce-card">
-                    <div class="card-image-wrapper">
-                        <img src="https://images.unsplash.com/photo-1512069772995-ec65ed45afd6?auto=format&fit=crop&w=400&q=80" alt="Paracetamol Syrup" class="card-img">
-                        <span class="ecommerce-badge">In Stock</span>
-                    </div>
-                    <div class="card-body">
-                        <h3>Paracetamol Syrup 120 mg / 5 mL</h3>
-                        <p class="card-desc">Clear, cherry-flavored oral suspension designed for pediatric use. Precise dosing.</p>
-                        <div class="card-footer">
-                            <a href="https://www.trendyol.com" target="_blank" class="btn btn-orange btn-block">🛒 Buy on Trendyol</a>
-                            <details class="specs-details">
-                                <summary>📄 View Quality Specifications</summary>
-                                <div class="specs-content">
-                                    <p><strong>Appearance:</strong> Pale-yellow liquid</p>
-                                    <p><strong>Viscosity:</strong> 50 – 200 cP</p>
-                                    <p><strong>Flavor:</strong> Cherry</p>
-                                    <p><strong>Pack:</strong> 100 mL bottle</p>
-                                </div>
-                            </details>
-                        </div>
-                    </div>
+                {% if not products %}
+                <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px;">
+                    <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+                    <h3 style="color: #555;">No Products Available</h3>
+                    <p style="color: #888;">Check back soon for our product catalog.</p>
                 </div>
+                {% endif %}
             </div>
         </main>
     </div>

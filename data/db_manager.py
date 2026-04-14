@@ -155,7 +155,34 @@ def init_db():
     """)
 
     conn.commit()
+
+    # ── Additive migrations (safe on existing DBs) ────────────────────────
+    _migrate_add_columns(conn)
+
     conn.close()
+
+
+def _migrate_add_columns(conn):
+    """Add columns that may not exist on older databases."""
+    _add_column_if_missing(conn, 'products', 'description', 'TEXT')
+    _add_column_if_missing(conn, 'products', 'image_url', 'TEXT')
+    _add_column_if_missing(conn, 'products', 'category', 'TEXT')
+    _add_column_if_missing(conn, 'products', 'dosage_form', 'TEXT')
+    _add_column_if_missing(conn, 'products', 'specifications', 'TEXT')
+    _add_column_if_missing(conn, 'products', 'buy_link', 'TEXT')
+    _add_column_if_missing(conn, 'products', 'is_active', 'INTEGER DEFAULT 1')
+    _add_column_if_missing(conn, 'batch_records', 'batch_size', 'INTEGER')
+    _add_column_if_missing(conn, 'batch_records', 'aql_level', 'TEXT')
+    conn.commit()
+
+
+def _add_column_if_missing(conn, table, column, col_type):
+    """Safely add a column if it doesn't already exist."""
+    cursor = conn.execute(f"PRAGMA table_info({table})")
+    existing = [row[1] for row in cursor.fetchall()]
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +230,16 @@ def get_all_products():
     return rows
 
 
+def get_active_products():
+    """Return only active products for the public catalog."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM products WHERE is_active = 1 OR is_active IS NULL ORDER BY product_name"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def get_product_by_id(product_id: int):
     """Return a single product by ID."""
     conn = get_connection()
@@ -219,6 +256,73 @@ def get_product_by_name(product_name: str):
     ).fetchone()
     conn.close()
     return row
+
+
+def update_product(product_id, product_name=None, form=None, description=None,
+                   image_url=None, category=None, dosage_form=None,
+                   specifications=None, buy_link=None, is_active=None):
+    """Update an existing product. Only non-None fields are updated."""
+    conn = get_connection()
+    try:
+        sets = []
+        params = []
+        if product_name is not None:
+            sets.append("product_name = ?")
+            params.append(product_name)
+        if form is not None:
+            sets.append("form = ?")
+            params.append(form)
+        if description is not None:
+            sets.append("description = ?")
+            params.append(description)
+        if image_url is not None:
+            sets.append("image_url = ?")
+            params.append(image_url)
+        if category is not None:
+            sets.append("category = ?")
+            params.append(category)
+        if dosage_form is not None:
+            sets.append("dosage_form = ?")
+            params.append(dosage_form)
+        if specifications is not None:
+            sets.append("specifications = ?")
+            params.append(specifications)
+        if buy_link is not None:
+            sets.append("buy_link = ?")
+            params.append(buy_link)
+        if is_active is not None:
+            sets.append("is_active = ?")
+            params.append(is_active)
+        if not sets:
+            return
+        params.append(product_id)
+        conn.execute(
+            f"UPDATE products SET {', '.join(sets)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_product(product_id):
+    """Delete a product by ID. Soft-delete by setting is_active = 0."""
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE products SET is_active = 0 WHERE id = ?", (product_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def hard_delete_product(product_id):
+    """Permanently delete a product. Use with caution."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -598,6 +702,28 @@ def get_batch_records_for_spc(product_name, checkpoint):
 
     conn.close()
     return rows
+
+
+def get_distinct_batches(product_name):
+    """Return distinct batch numbers for a given product from batch_records."""
+    conn = get_connection()
+    product = conn.execute(
+        "SELECT id FROM products WHERE product_name = ?", (product_name,)
+    ).fetchone()
+
+    if product:
+        rows = conn.execute(
+            "SELECT DISTINCT batch_number FROM batch_records WHERE product_id = ? ORDER BY tested_at DESC",
+            (product["id"],)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT DISTINCT batch_number FROM batch_records WHERE product_name = ? ORDER BY tested_at DESC",
+            (product_name,)
+        ).fetchall()
+
+    conn.close()
+    return [row['batch_number'] for row in rows]
 
 
 def get_distinct_checkpoints(product_name=None):

@@ -56,6 +56,9 @@
                 
                 {% if session.user.role == 'Executive' %}
                 <div class="sidebar-nav-label" style="margin-top: 24px; color: #ff6b6b;">Administration</div>
+                <a href="/portal/products" class="{% if active_page == 'product_management' %}active{% endif %}">
+                    <span class="nav-icon">📦</span> Product Management
+                </a>
                 <a href="/portal/staff" class="{% if active_page == 'staff' %}active{% endif %}">
                     <span class="nav-icon">👥</span> Employee Directory
                 </a>
