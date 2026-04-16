@@ -132,12 +132,12 @@ def init_db():
             batch_number TEXT NOT NULL,
             product_name TEXT NOT NULL,
             product_id INTEGER REFERENCES products(id) ON DELETE RESTRICT,
-            checklist_id INTEGER NOT NULL,
+            checklist_id INTEGER,
             checkpoint TEXT NOT NULL,
             individual_values TEXT NOT NULL,
             sample_count INTEGER NOT NULL,
-            mean REAL NOT NULL,
-            range_val REAL NOT NULL,
+            mean REAL,
+            range_val REAL,
             tol_min REAL,
             tol_max REAL,
             status TEXT NOT NULL CHECK(status IN ('PASS', 'FAIL')),
@@ -146,12 +146,105 @@ def init_db():
             FOREIGN KEY (checklist_id) REFERENCES qc_checklists(id)
         );
 
+        -- ── New Stage-Based Manufacturing Tables ──────────────────────────
+
+        CREATE TABLE IF NOT EXISTS production_stages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stage_code TEXT UNIQUE NOT NULL,
+            stage_name TEXT NOT NULL,
+            layer TEXT NOT NULL CHECK(layer IN ('IQC', 'IPQC', 'FQC')),
+            product_form TEXT CHECK(product_form IN ('Tablet', 'Syrup') OR product_form IS NULL),
+            sequence_order INTEGER NOT NULL,
+            equipment_json TEXT DEFAULT '[]'
+        );
+
+        CREATE TABLE IF NOT EXISTS stage_checkpoints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            stage_id INTEGER NOT NULL,
+            section TEXT DEFAULT '',
+            checkpoint_no TEXT NOT NULL,
+            checkpoint_name TEXT NOT NULL,
+            sample_size TEXT DEFAULT '',
+            sample_count INTEGER DEFAULT 1,
+            instruction TEXT DEFAULT '',
+            tolerance TEXT DEFAULT '',
+            unit TEXT DEFAULT '',
+            tol_min REAL,
+            tol_max REAL,
+            frequency TEXT DEFAULT '',
+            defect_type TEXT DEFAULT '',
+            test_type TEXT DEFAULT 'variable',
+            FOREIGN KEY (stage_id) REFERENCES production_stages(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS material_lots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_type TEXT NOT NULL CHECK(material_type IN ('API', 'Excipient', 'Packaging')),
+            material_name TEXT NOT NULL,
+            lot_number TEXT UNIQUE NOT NULL,
+            supplier TEXT DEFAULT '',
+            received_date TEXT,
+            expiry_date TEXT,
+            quantity REAL,
+            unit TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'Quarantine' CHECK(status IN ('Quarantine', 'Released', 'Rejected')),
+            released_by TEXT,
+            released_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_number TEXT UNIQUE NOT NULL,
+            product_id INTEGER NOT NULL,
+            batch_size INTEGER,
+            status TEXT NOT NULL DEFAULT 'Created' CHECK(status IN ('Created', 'In-Progress', 'Pending-Release', 'Released', 'Rejected')),
+            current_stage_id INTEGER,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            released_by TEXT,
+            released_at TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id),
+            FOREIGN KEY (current_stage_id) REFERENCES production_stages(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS batch_materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            material_lot_id INTEGER NOT NULL,
+            quantity_used REAL,
+            unit TEXT DEFAULT '',
+            FOREIGN KEY (batch_id) REFERENCES batches(id),
+            FOREIGN KEY (material_lot_id) REFERENCES material_lots(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS batch_stage_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            stage_id INTEGER NOT NULL,
+            verdict TEXT NOT NULL CHECK(verdict IN ('PASS', 'FAIL', 'IN_PROGRESS')),
+            notes TEXT DEFAULT '',
+            signed_by TEXT,
+            signed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (batch_id) REFERENCES batches(id),
+            FOREIGN KEY (stage_id) REFERENCES production_stages(id),
+            UNIQUE(batch_id, stage_id)
+        );
+
         -- Indices on FK columns
         CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
         CREATE INDEX IF NOT EXISTS idx_specs_product_id ON specs_master(product_id);
         CREATE INDEX IF NOT EXISTS idx_specs_checklist_id ON specs_master(checklist_id);
         CREATE INDEX IF NOT EXISTS idx_checklists_product_id ON qc_checklists(product_id);
         CREATE INDEX IF NOT EXISTS idx_batch_records_product_id ON batch_records(product_id);
+        CREATE INDEX IF NOT EXISTS idx_stage_checkpoints_stage_id ON stage_checkpoints(stage_id);
+        CREATE INDEX IF NOT EXISTS idx_batches_product_id ON batches(product_id);
+        CREATE INDEX IF NOT EXISTS idx_batches_current_stage ON batches(current_stage_id);
+        CREATE INDEX IF NOT EXISTS idx_batch_materials_batch ON batch_materials(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_batch_materials_lot ON batch_materials(material_lot_id);
+        CREATE INDEX IF NOT EXISTS idx_batch_stage_results_batch ON batch_stage_results(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_batch_stage_results_stage ON batch_stage_results(stage_id);
     """)
 
     conn.commit()
@@ -173,7 +266,69 @@ def _migrate_add_columns(conn):
     _add_column_if_missing(conn, 'products', 'is_active', 'INTEGER DEFAULT 1')
     _add_column_if_missing(conn, 'batch_records', 'batch_size', 'INTEGER')
     _add_column_if_missing(conn, 'batch_records', 'aql_level', 'TEXT')
+    _add_column_if_missing(conn, 'batch_records', 'batch_id', 'INTEGER REFERENCES batches(id)')
+    _add_column_if_missing(conn, 'batch_records', 'stage_id', 'INTEGER REFERENCES production_stages(id)')
+    _add_column_if_missing(conn, 'capa_logs', 'batch_id', 'INTEGER')
+    _add_column_if_missing(conn, 'capa_logs', 'stage_id', 'INTEGER')
+    _add_column_if_missing(conn, 'capa_logs', 'source_type', "TEXT DEFAULT 'complaint'")
+    _add_column_if_missing(conn, 'stage_checkpoints', 'result_type', "TEXT DEFAULT 'numeric'")
+    _add_column_if_missing(conn, 'batch_records', 'sample_number', 'INTEGER DEFAULT 1')
+    _relax_batch_records_constraints(conn)
     conn.commit()
+
+
+def _relax_batch_records_constraints(conn):
+    """Recreate batch_records without NOT NULL on checklist_id/mean/range_val.
+
+    Stage-based QC entries don't have a legacy checklist_id, and pass/fail
+    checkpoints have no numeric mean/range.  Run this idempotently by checking
+    whether checklist_id already allows NULLs.
+    """
+    info = {row[1]: row[3] for row in conn.execute("PRAGMA table_info(batch_records)").fetchall()}
+    # row[3] is 'notnull' flag — 1 means NOT NULL
+    if info.get('checklist_id', 1) == 0:
+        return  # already relaxed
+
+    conn.executescript("""
+        PRAGMA foreign_keys = OFF;
+
+        CREATE TABLE IF NOT EXISTS batch_records_new (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_number     TEXT NOT NULL,
+            product_name     TEXT NOT NULL,
+            product_id       INTEGER REFERENCES products(id) ON DELETE RESTRICT,
+            checklist_id     INTEGER,
+            checkpoint       TEXT NOT NULL,
+            individual_values TEXT NOT NULL,
+            sample_count     INTEGER NOT NULL,
+            mean             REAL,
+            range_val        REAL,
+            tol_min          REAL,
+            tol_max          REAL,
+            status           TEXT NOT NULL CHECK(status IN ('PASS','FAIL')),
+            tested_by        TEXT NOT NULL,
+            tested_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            batch_size       INTEGER,
+            aql_level        TEXT,
+            batch_id         INTEGER,
+            stage_id         INTEGER,
+            sample_number    INTEGER DEFAULT 1
+        );
+
+        INSERT INTO batch_records_new
+            SELECT id, batch_number, product_name, product_id, checklist_id,
+                   checkpoint, individual_values, sample_count, mean, range_val,
+                   tol_min, tol_max, status, tested_by, tested_at,
+                   batch_size, aql_level, batch_id, stage_id,
+                   COALESCE(sample_number, 1)
+            FROM batch_records;
+
+        DROP TABLE batch_records;
+
+        ALTER TABLE batch_records_new RENAME TO batch_records;
+
+        PRAGMA foreign_keys = ON;
+    """)
 
 
 def _add_column_if_missing(conn, table, column, col_type):
@@ -629,10 +784,12 @@ def get_qc_checklists_by_product(product_name):
 def insert_batch_record(batch_number, product_name, checklist_id, checkpoint,
                         individual_values, sample_count, mean, range_val,
                         tol_min, tol_max, status, tested_by,
-                        product_id=None):
+                        product_id=None, batch_id=None, stage_id=None,
+                        batch_size=None, aql_level=None):
     """Insert a QC test result for a single checkpoint in a batch.
-    
+
     If product_id is not provided, it will be looked up from product_name.
+    batch_id, stage_id, batch_size, aql_level are optional for stage-based entry.
     """
     if product_id is None:
         product_id = get_or_create_product(product_name)
@@ -643,11 +800,13 @@ def insert_batch_record(batch_number, product_name, checklist_id, checkpoint,
             """INSERT INTO batch_records
                (batch_number, product_name, product_id, checklist_id, checkpoint,
                 individual_values, sample_count, mean, range_val,
-                tol_min, tol_max, status, tested_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                tol_min, tol_max, status, tested_by,
+                batch_id, stage_id, batch_size, aql_level)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (batch_number, product_name, product_id, checklist_id, checkpoint,
              individual_values, sample_count, mean, range_val,
-             tol_min, tol_max, status, tested_by),
+             tol_min, tol_max, status, tested_by,
+             batch_id, stage_id, batch_size, aql_level),
         )
         conn.commit()
     finally:
@@ -669,11 +828,11 @@ def get_batch_records_by_batch(batch_number):
     return rows
 
 
-def get_batch_records_for_spc(product_name, checkpoint):
+def get_batch_records_for_spc(product_name, checkpoint, stage_id=None):
     """Return historical mean/range data for SPC charts, ordered by batch.
-    
+
     Uses product_id lookup (via products table) rather than free-text
-    string matching for reliable filtering.
+    string matching for reliable filtering. Optionally filter by stage_id.
     """
     conn = get_connection()
 
@@ -682,22 +841,25 @@ def get_batch_records_for_spc(product_name, checkpoint):
         "SELECT id FROM products WHERE product_name = ?", (product_name,)
     ).fetchone()
 
+    stage_clause = "AND stage_id = ?" if stage_id is not None else ""
+    stage_param = (stage_id,) if stage_id is not None else ()
+
     if product:
         rows = conn.execute(
-            """SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max, tested_at
+            f"""SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max, tested_at
                FROM batch_records
-               WHERE product_id = ? AND checkpoint = ?
+               WHERE product_id = ? AND checkpoint = ? {stage_clause}
                ORDER BY tested_at ASC""",
-            (product["id"], checkpoint)
+            (product["id"], checkpoint) + stage_param
         ).fetchall()
     else:
         # Fallback to text matching
         rows = conn.execute(
-            """SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max, tested_at
+            f"""SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max, tested_at
                FROM batch_records
-               WHERE product_name = ? AND checkpoint = ?
+               WHERE product_name = ? AND checkpoint = ? {stage_clause}
                ORDER BY tested_at ASC""",
-            (product_name, checkpoint)
+            (product_name, checkpoint) + stage_param
         ).fetchall()
 
     conn.close()
@@ -726,12 +888,22 @@ def get_distinct_batches(product_name):
     return [row['batch_number'] for row in rows]
 
 
-def get_distinct_checkpoints(product_name=None):
-    """Return distinct checkpoints, optionally filtered by product.
-    
-    Uses product_id lookup for reliable filtering.
+def get_distinct_checkpoints(product_name=None, stage_id=None):
+    """Return distinct checkpoints, optionally filtered by product and/or stage.
+
+    When stage_id is provided, returns checkpoint names defined in that stage's
+    stage_checkpoints table (ordered by checkpoint_no).
+    Otherwise falls back to qc_checklists.
     """
     conn = get_connection()
+
+    if stage_id is not None:
+        rows = conn.execute(
+            "SELECT DISTINCT checkpoint_name FROM stage_checkpoints WHERE stage_id = ? ORDER BY checkpoint_no",
+            (stage_id,)
+        ).fetchall()
+        conn.close()
+        return [row['checkpoint_name'] for row in rows]
 
     if product_name:
         # Resolve product_id first
@@ -919,3 +1091,414 @@ def update_spec(spec_id, product_name, form, checkpoint, sample_size,
         conn.commit()
     finally:
         conn.close()
+
+
+# ===========================================================================
+# Production Stages & Stage Checkpoints
+# ===========================================================================
+
+def get_all_stages(layer=None, product_form=None):
+    """Return production stages, optionally filtered by layer and/or product_form."""
+    conn = get_connection()
+    query = "SELECT * FROM production_stages WHERE 1=1"
+    params = []
+    if layer:
+        query += " AND layer = ?"
+        params.append(layer)
+    if product_form:
+        query += " AND (product_form = ? OR product_form IS NULL)"
+        params.append(product_form)
+    query += " ORDER BY sequence_order"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
+
+
+def get_stage_by_code(stage_code):
+    """Return a single stage by its code (e.g., 'IPQC-T-02')."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM production_stages WHERE stage_code = ?", (stage_code,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_stage_by_id(stage_id):
+    """Return a single stage by its ID."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM production_stages WHERE id = ?", (stage_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_checkpoints_by_stage(stage_id):
+    """Return all checkpoints for a given stage, ordered by checkpoint_no."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM stage_checkpoints WHERE stage_id = ? ORDER BY id",
+        (stage_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_checkpoint_by_id(checkpoint_id):
+    """Return a single stage_checkpoint row by ID."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM stage_checkpoints WHERE id = ?", (checkpoint_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_stages_for_product(product_id):
+    """Return the ordered pipeline of stages for a product's form (Tablet/Syrup).
+    IQC stages (product_form IS NULL) are included for all products.
+    """
+    conn = get_connection()
+    product = conn.execute("SELECT form FROM products WHERE id = ?", (product_id,)).fetchone()
+    if not product:
+        conn.close()
+        return []
+    form = product['form']
+    rows = conn.execute(
+        """SELECT * FROM production_stages
+           WHERE product_form = ? OR product_form IS NULL
+           ORDER BY sequence_order""",
+        (form,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+# ===========================================================================
+# Material Lots
+# ===========================================================================
+
+def create_material_lot(material_type, material_name, lot_number, supplier='',
+                        received_date=None, expiry_date=None, quantity=None, unit=''):
+    """Create a new material lot in Quarantine status."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO material_lots
+               (material_type, material_name, lot_number, supplier,
+                received_date, expiry_date, quantity, unit)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (material_type, material_name, lot_number, supplier,
+             received_date, expiry_date, quantity, unit),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_all_material_lots(status=None, material_type=None):
+    """Return material lots, optionally filtered."""
+    conn = get_connection()
+    query = "SELECT * FROM material_lots WHERE 1=1"
+    params = []
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if material_type:
+        query += " AND material_type = ?"
+        params.append(material_type)
+    query += " ORDER BY created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
+
+
+def get_material_lot_by_id(lot_id):
+    """Return a single material lot by ID."""
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM material_lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def update_material_lot_status(lot_id, status, released_by=None):
+    """Update a material lot's status (Release or Reject)."""
+    conn = get_connection()
+    try:
+        if status in ('Released', 'Rejected') and released_by:
+            conn.execute(
+                "UPDATE material_lots SET status = ?, released_by = ?, released_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (status, released_by, lot_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE material_lots SET status = ? WHERE id = ?",
+                (status, lot_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# Batches (Production Batch Lifecycle)
+# ===========================================================================
+
+def create_batch(batch_number, product_id, created_by, batch_size=None):
+    """Create a new production batch in 'Created' status."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO batches (batch_number, product_id, batch_size, created_by)
+               VALUES (?, ?, ?, ?)""",
+            (batch_number, product_id, batch_size, created_by),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_batch(batch_id):
+    """Return a single batch by ID with product info."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT b.*, p.product_name, p.form as product_form,
+                  ps.stage_code as current_stage_code, ps.stage_name as current_stage_name
+           FROM batches b
+           JOIN products p ON b.product_id = p.id
+           LEFT JOIN production_stages ps ON b.current_stage_id = ps.id
+           WHERE b.id = ?""",
+        (batch_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_batch_by_number(batch_number):
+    """Return a single batch by batch number."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT b.*, p.product_name, p.form as product_form,
+                  ps.stage_code as current_stage_code, ps.stage_name as current_stage_name
+           FROM batches b
+           JOIN products p ON b.product_id = p.id
+           LEFT JOIN production_stages ps ON b.current_stage_id = ps.id
+           WHERE b.batch_number = ?""",
+        (batch_number,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_all_batches(status=None, product_id=None):
+    """Return all batches, optionally filtered."""
+    conn = get_connection()
+    query = """SELECT b.*, p.product_name, p.form as product_form,
+                      ps.stage_code as current_stage_code, ps.stage_name as current_stage_name
+               FROM batches b
+               JOIN products p ON b.product_id = p.id
+               LEFT JOIN production_stages ps ON b.current_stage_id = ps.id
+               WHERE 1=1"""
+    params = []
+    if status:
+        query += " AND b.status = ?"
+        params.append(status)
+    if product_id:
+        query += " AND b.product_id = ?"
+        params.append(product_id)
+    query += " ORDER BY b.created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return rows
+
+
+def update_batch_status(batch_id, status, current_stage_id=None,
+                        released_by=None):
+    """Update batch status and optionally the current stage."""
+    conn = get_connection()
+    try:
+        sets = ["status = ?"]
+        params = [status]
+        if current_stage_id is not None:
+            sets.append("current_stage_id = ?")
+            params.append(current_stage_id)
+        if status == 'Released' and released_by:
+            sets.append("released_by = ?")
+            params.append(released_by)
+            sets.append("released_at = CURRENT_TIMESTAMP")
+        params.append(batch_id)
+        conn.execute(
+            f"UPDATE batches SET {', '.join(sets)} WHERE id = ?", params
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# Batch ↔ Material Links
+# ===========================================================================
+
+def link_batch_material(batch_id, material_lot_id, quantity_used=None, unit=''):
+    """Link a material lot to a production batch."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO batch_materials (batch_id, material_lot_id, quantity_used, unit) VALUES (?, ?, ?, ?)",
+            (batch_id, material_lot_id, quantity_used, unit),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_batch_materials(batch_id):
+    """Return material lots linked to a batch."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT bm.*, ml.material_name, ml.lot_number, ml.material_type,
+                  ml.supplier, ml.status as lot_status
+           FROM batch_materials bm
+           JOIN material_lots ml ON bm.material_lot_id = ml.id
+           WHERE bm.batch_id = ?""",
+        (batch_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+# ===========================================================================
+# Batch Stage Results (Gate Sign-offs)
+# ===========================================================================
+
+def insert_batch_stage_result(batch_id, stage_id, verdict, signed_by=None, notes=''):
+    """Insert or update a stage result for a batch (upsert on UNIQUE constraint)."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO batch_stage_results (batch_id, stage_id, verdict, signed_by, signed_at, notes)
+               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+               ON CONFLICT(batch_id, stage_id) DO UPDATE SET
+                   verdict = excluded.verdict,
+                   signed_by = excluded.signed_by,
+                   signed_at = excluded.signed_at,
+                   notes = excluded.notes""",
+            (batch_id, stage_id, verdict, signed_by, notes),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_batch_stage_results(batch_id):
+    """Return all stage results for a batch, joined with stage info."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT bsr.*, ps.stage_code, ps.stage_name, ps.layer, ps.sequence_order
+           FROM batch_stage_results bsr
+           JOIN production_stages ps ON bsr.stage_id = ps.id
+           WHERE bsr.batch_id = ?
+           ORDER BY ps.sequence_order""",
+        (batch_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_stage_result(batch_id, stage_id):
+    """Return a single stage result."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM batch_stage_results WHERE batch_id = ? AND stage_id = ?",
+        (batch_id, stage_id)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def can_start_stage(batch_id, stage_id):
+    """Check whether all prerequisite stages have PASS verdict.
+
+    Prerequisites = all stages with lower sequence_order that share the
+    same product_form (or are IQC, which applies to all).
+    """
+    conn = get_connection()
+    try:
+        # Get the target stage
+        target = conn.execute(
+            "SELECT * FROM production_stages WHERE id = ?", (stage_id,)
+        ).fetchone()
+        if not target:
+            return False
+
+        # Get batch's product form
+        batch = conn.execute(
+            """SELECT p.form FROM batches b JOIN products p ON b.product_id = p.id
+               WHERE b.id = ?""", (batch_id,)
+        ).fetchone()
+        if not batch:
+            return False
+
+        # Get all prerequisite stages (lower sequence_order, matching form or IQC)
+        prereqs = conn.execute(
+            """SELECT ps.id FROM production_stages ps
+               WHERE ps.sequence_order < ?
+                 AND (ps.product_form = ? OR ps.product_form IS NULL)""",
+            (target['sequence_order'], batch['form'])
+        ).fetchall()
+
+        if not prereqs:
+            return True  # First stage, no prerequisites
+
+        # Check all prereqs have PASS verdict
+        prereq_ids = [r['id'] for r in prereqs]
+        placeholders = ','.join('?' * len(prereq_ids))
+        passed = conn.execute(
+            f"""SELECT COUNT(*) as cnt FROM batch_stage_results
+                WHERE batch_id = ? AND stage_id IN ({placeholders}) AND verdict = 'PASS'""",
+            [batch_id] + prereq_ids
+        ).fetchone()
+
+        return passed['cnt'] == len(prereq_ids)
+    finally:
+        conn.close()
+
+
+# ===========================================================================
+# CAPA — Extended for QC Failures
+# ===========================================================================
+
+def insert_capa_from_qc(batch_id, stage_id, root_cause, corrective_action,
+                        preventive_action, manager_assigned):
+    """Log a CAPA originating from a QC failure (not a customer complaint)."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO capa_logs
+               (review_id, root_cause, corrective_action, preventive_action,
+                manager_assigned, batch_id, stage_id, source_type)
+               VALUES (NULL, ?, ?, ?, ?, ?, ?, 'qc_failure')""",
+            (root_cause, corrective_action, preventive_action,
+             manager_assigned, batch_id, stage_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_all_capa_logs_extended():
+    """Return all CAPA logs with source info (complaint or QC failure)."""
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT c.*,
+               r.batch_number as review_batch, r.product_type, r.review_text, r.ai_category,
+               b.batch_number as qc_batch, ps.stage_code, ps.stage_name
+        FROM capa_logs c
+        LEFT JOIN reviews r ON c.review_id = r.id
+        LEFT JOIN batches b ON c.batch_id = b.id
+        LEFT JOIN production_stages ps ON c.stage_id = ps.id
+        ORDER BY c.resolved_at DESC
+    """).fetchall()
+    conn.close()
+    return rows

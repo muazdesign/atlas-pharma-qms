@@ -1,0 +1,346 @@
+{% extends "base_internal.html" %}
+{% block title %}Batch Tracker — Atlas Pharma QMS{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>🏭 Batch Tracker</h1>
+  <p class="subtitle">Production batch lifecycle — IQC → IPQC → FQC</p>
+</div>
+
+<!-- Flash messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="alert alert-{{ cat }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<!-- Controls row -->
+<div class="controls-row" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
+  <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <select name="status" class="form-control" style="width:160px;" onchange="this.form.submit()">
+      <option value="">All Statuses</option>
+      {% for s in ['Created','In-Progress','Pending-Release','Released','Rejected'] %}
+        <option value="{{ s }}" {% if status_filter==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <select name="product_id" class="form-control" style="width:220px;" onchange="this.form.submit()">
+      <option value="">All Products</option>
+      {% for p in products %}
+        <option value="{{ p.id }}" {% if product_filter==p.id %}selected{% endif %}>{{ p.product_name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% if session.user.role in ('Quality Manager','Executive','Admin') %}
+  <button class="btn btn-primary" onclick="document.getElementById('createModal').style.display='flex'">+ New Batch</button>
+  {% endif %}
+</div>
+
+<!-- Batch list -->
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Batch Number</th>
+        <th>Product</th>
+        <th>Size</th>
+        <th>Status</th>
+        <th>Current Stage</th>
+        <th>Created By</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in batches %}
+      <tr>
+        <td><strong>{{ b.batch_number }}</strong></td>
+        <td>{{ b.product_name }}</td>
+        <td>{{ b.batch_size or '—' }}</td>
+        <td>
+          {% set sc = {'Created':'badge-info','In-Progress':'badge-warning','Pending-Release':'badge-warning','Released':'badge-success','Rejected':'badge-danger'} %}
+          <span class="badge {{ sc.get(b.status,'badge-info') }}">{{ b.status }}</span>
+        </td>
+        <td>{{ b.current_stage_code or '—' }}</td>
+        <td>{{ b.created_by }}</td>
+        <td>{{ b.created_at[:10] if b.created_at else '—' }}</td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="openPipeline({{ b.id }}, '{{ b.batch_number }}', '{{ b.status }}')">
+            View Pipeline
+          </button>
+          {% if b.status == 'Pending-Release' and session.user.role in ('Executive','Admin') %}
+          <button class="btn btn-sm btn-success" onclick="releaseBatch({{ b.id }}, '{{ b.batch_number }}')">Release</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;color:#888;">No batches found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pipeline Modal -->
+<div id="pipelineModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:860px;max-height:90vh;overflow-y:auto;padding:28px;position:relative;">
+    <button onclick="document.getElementById('pipelineModal').style.display='none'" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+    <h2 id="pipelineTitle" style="margin:0 0 20px;"></h2>
+
+    <!-- Pipeline visualization -->
+    <div id="pipelineViz" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:24px;"></div>
+
+    <!-- Stage details panel -->
+    <div id="stageDetail" style="display:none;border:1px solid #e0e0e0;border-radius:8px;padding:20px;">
+      <h3 id="stageDetailTitle" style="margin:0 0 12px;"></h3>
+      <p id="stageDetailMeta" style="color:#666;margin:0 0 16px;font-size:13px;"></p>
+      <div id="stageDetailActions" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;"></div>
+      <div id="checkpointList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Sign-off Modal -->
+<div id="signModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1100;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:480px;padding:28px;position:relative;">
+    <button onclick="document.getElementById('signModal').style.display='none'" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+    <h3 id="signModalTitle" style="margin:0 0 16px;"></h3>
+    <div style="margin-bottom:12px;">
+      <label style="font-weight:600;display:block;margin-bottom:6px;">Verdict</label>
+      <div style="display:flex;gap:12px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="radio" name="verdict" value="PASS" checked> <span style="color:#28a745;font-weight:600;">✓ PASS</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="radio" name="verdict" value="FAIL"> <span style="color:#dc3545;font-weight:600;">✗ FAIL</span>
+        </label>
+      </div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="font-weight:600;display:block;margin-bottom:6px;">Notes (optional)</label>
+      <textarea id="signNotes" rows="3" class="form-control" placeholder="Any observations, deviations..."></textarea>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" onclick="submitSignOff()">Submit Sign-off</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('signModal').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Batch Modal -->
+<div id="createModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:440px;padding:28px;position:relative;">
+    <button onclick="document.getElementById('createModal').style.display='none'" style="position:absolute;top:16px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>
+    <h3 style="margin:0 0 20px;">Create New Batch</h3>
+    <form method="post" action="/portal/batch-tracker/create">
+      <div class="form-group">
+        <label>Batch Number *</label>
+        <input type="text" name="batch_number" class="form-control" placeholder="e.g. PARA-T-20260416-003" required>
+      </div>
+      <div class="form-group">
+        <label>Product *</label>
+        <select name="product_id" class="form-control" required>
+          <option value="">Select product...</option>
+          {% for p in products %}
+          <option value="{{ p.id }}">{{ p.product_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Batch Size (units)</label>
+        <input type="number" name="batch_size" class="form-control" placeholder="e.g. 100000">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button type="submit" class="btn btn-primary">Create Batch</button>
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('createModal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.badge { padding:4px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.badge-info { background:#e3f2fd; color:#0056b3; }
+.badge-warning { background:#fff3cd; color:#856404; }
+.badge-success { background:#d4edda; color:#155724; }
+.badge-danger { background:#f8d7da; color:#721c24; }
+.badge-gray { background:#e9ecef; color:#495057; }
+
+.stage-pill {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  padding:10px 14px; border-radius:10px; cursor:pointer;
+  border:2px solid transparent; min-width:100px; text-align:center;
+  transition:transform .15s, box-shadow .15s;
+  font-size:12px;
+}
+.stage-pill:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(0,0,0,.12); }
+.stage-pill.PASS { background:#d4edda; border-color:#28a745; color:#155724; }
+.stage-pill.FAIL { background:#f8d7da; border-color:#dc3545; color:#721c24; }
+.stage-pill.IN_PROGRESS { background:#fff3cd; border-color:#ffc107; color:#856404; }
+.stage-pill.NOT_STARTED { background:#f8f9fa; border-color:#dee2e6; color:#6c757d; }
+.stage-pill.selected { box-shadow:0 0 0 3px #0056b3; }
+
+.checkpoint-row { padding:10px 0; border-bottom:1px solid #f0f0f0; font-size:13px; }
+.checkpoint-row:last-child { border-bottom:none; }
+.checkpoint-section-header { font-weight:700; color:#0056b3; margin:12px 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+</style>
+
+<script>
+let currentBatchId = null;
+let currentBatchStatus = null;
+let selectedStageId = null;
+
+function openPipeline(batchId, batchNumber, batchStatus) {
+  currentBatchId = batchId;
+  currentBatchStatus = batchStatus;
+  selectedStageId = null;
+  document.getElementById('pipelineTitle').textContent = 'Batch: ' + batchNumber;
+  document.getElementById('stageDetail').style.display = 'none';
+  document.getElementById('pipelineModal').style.display = 'flex';
+  loadPipeline(batchId);
+}
+
+function loadPipeline(batchId) {
+  fetch('/api/batch/' + batchId + '/stages')
+    .then(r => r.json())
+    .then(data => renderPipeline(data.pipeline));
+}
+
+function renderPipeline(pipeline) {
+  const viz = document.getElementById('pipelineViz');
+  viz.innerHTML = '';
+  // Group by layer
+  const layers = { IQC: [], IPQC: [], FQC: [] };
+  pipeline.forEach(s => layers[s.layer].push(s));
+
+  ['IQC', 'IPQC', 'FQC'].forEach(layer => {
+    if (!layers[layer].length) return;
+    const group = document.createElement('div');
+    group.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+    const label = document.createElement('div');
+    label.textContent = layer;
+    label.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;color:#888;letter-spacing:1px;';
+    group.appendChild(label);
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;';
+    layers[layer].forEach(s => {
+      const pill = document.createElement('div');
+      pill.className = 'stage-pill ' + s.verdict;
+      pill.id = 'stage-pill-' + s.id;
+      const icon = { PASS: '✓', FAIL: '✗', IN_PROGRESS: '⟳', NOT_STARTED: '○' }[s.verdict] || '○';
+      pill.innerHTML = `<span style="font-size:16px;">${icon}</span><span style="font-weight:600;">${s.stage_code}</span><span>${s.stage_name}</span>`;
+      pill.onclick = () => selectStage(s);
+      row.appendChild(pill);
+    });
+    group.appendChild(row);
+    viz.appendChild(group);
+    // Arrow between groups
+    if (layer !== 'FQC') {
+      const arrow = document.createElement('div');
+      arrow.innerHTML = '<span style="font-size:24px;color:#ccc;padding:0 4px;align-self:flex-end;margin-bottom:14px;">→</span>';
+      arrow.style.display = 'flex';
+      viz.appendChild(arrow);
+    }
+  });
+}
+
+function selectStage(stage) {
+  // Deselect previous
+  document.querySelectorAll('.stage-pill.selected').forEach(el => el.classList.remove('selected'));
+  document.getElementById('stage-pill-' + stage.id)?.classList.add('selected');
+  selectedStageId = stage.id;
+
+  const detail = document.getElementById('stageDetail');
+  detail.style.display = 'block';
+  document.getElementById('stageDetailTitle').textContent = stage.stage_code + ' — ' + stage.stage_name;
+
+  const meta = [];
+  if (stage.verdict !== 'NOT_STARTED') meta.push('Verdict: ' + stage.verdict);
+  if (stage.signed_by) meta.push('Signed by: ' + stage.signed_by);
+  if (stage.signed_at) meta.push('At: ' + stage.signed_at.slice(0,16));
+  if (stage.notes) meta.push('Notes: ' + stage.notes);
+  document.getElementById('stageDetailMeta').textContent = meta.join('  |  ');
+
+  // Actions
+  const actions = document.getElementById('stageDetailActions');
+  actions.innerHTML = '';
+  const canSign = currentBatchStatus !== 'Released' && currentBatchStatus !== 'Rejected';
+  if (canSign) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary btn-sm';
+    btn.textContent = '✏ Sign Off Stage';
+    btn.onclick = () => openSignModal(stage);
+    actions.appendChild(btn);
+  }
+  // QC entry link
+  const qcBtn = document.createElement('a');
+  qcBtn.href = '/portal/qc-entry?batch_id=' + currentBatchId + '&stage_id=' + stage.id;
+  qcBtn.className = 'btn btn-secondary btn-sm';
+  qcBtn.textContent = '🧪 Enter QC Data';
+  actions.appendChild(qcBtn);
+
+  // Load checkpoints
+  loadCheckpoints(stage.id);
+}
+
+function loadCheckpoints(stageId) {
+  const list = document.getElementById('checkpointList');
+  list.innerHTML = '<p style="color:#888;font-size:13px;">Loading checkpoints...</p>';
+  fetch('/api/stage-checkpoints/' + stageId)
+    .then(r => r.json())
+    .then(checkpoints => {
+      if (!checkpoints.length) { list.innerHTML = '<p style="color:#888;">No checkpoints defined.</p>'; return; }
+      let html = '';
+      let currentSection = '';
+      checkpoints.forEach(c => {
+        if (c.section !== currentSection) {
+          currentSection = c.section;
+          html += `<div class="checkpoint-section-header">${c.section}</div>`;
+        }
+        html += `<div class="checkpoint-row">
+          <strong>${c.checkpoint_no}. ${c.checkpoint_name}</strong>
+          <span style="float:right;color:#888;">${c.frequency || ''}</span>
+          <br><span style="color:#555;">${c.tolerance || ''}</span>
+          ${c.instruction ? `<br><small style="color:#888;">${c.instruction.substring(0,100)}${c.instruction.length>100?'…':''}</small>` : ''}
+        </div>`;
+      });
+      list.innerHTML = html;
+    });
+}
+
+let signStageData = null;
+function openSignModal(stage) {
+  signStageData = stage;
+  document.getElementById('signModalTitle').textContent = 'Sign Off: ' + stage.stage_code + ' — ' + stage.stage_name;
+  document.getElementById('signNotes').value = '';
+  document.querySelector('input[name="verdict"][value="PASS"]').checked = true;
+  document.getElementById('signModal').style.display = 'flex';
+}
+
+function submitSignOff() {
+  const verdict = document.querySelector('input[name="verdict"]:checked').value;
+  const notes = document.getElementById('signNotes').value;
+  fetch('/api/batch/' + currentBatchId + '/sign-stage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage_id: signStageData.id, verdict, notes })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { alert('Error: ' + data.error); return; }
+    document.getElementById('signModal').style.display = 'none';
+    loadPipeline(currentBatchId);
+    document.getElementById('stageDetail').style.display = 'none';
+    // Refresh page to update batch status in table
+    setTimeout(() => location.reload(), 800);
+  });
+}
+
+function releaseBatch(batchId, batchNumber) {
+  if (!confirm('Release batch ' + batchNumber + '? This cannot be undone.')) return;
+  fetch('/api/batch/' + batchId + '/release', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      location.reload();
+    });
+}
+</script>
+{% endblock %}

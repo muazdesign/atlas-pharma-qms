@@ -19,7 +19,16 @@ from data.db_manager import (
     get_all_products, get_active_products, get_or_create_product,
     get_product_by_name, get_product_by_id, update_product,
     delete_product, get_distinct_batches,
-    VALID_DEFECT_TYPES
+    VALID_DEFECT_TYPES,
+    # Stage-based manufacturing
+    get_all_stages, get_stage_by_code, get_stage_by_id, get_checkpoints_by_stage,
+    get_checkpoint_by_id, get_stages_for_product,
+    create_material_lot, get_all_material_lots, get_material_lot_by_id,
+    update_material_lot_status,
+    create_batch, get_batch, get_batch_by_number, get_all_batches, update_batch_status,
+    link_batch_material, get_batch_materials,
+    insert_batch_stage_result, get_batch_stage_results, get_stage_result, can_start_stage,
+    insert_capa_from_qc, get_all_capa_logs_extended,
 )
 from data.aql_tables import get_aql_sample_size, get_available_aql_values, get_available_inspection_levels
 from services.groq_ai import categorize_and_analyze
@@ -266,16 +275,16 @@ def specs():
 @app.route('/portal/capa', methods=['GET', 'POST'])
 @login_required
 def capa():
-    if session['user']['role'] != 'Quality Manager':
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
         flash("Only Quality Managers can log CAPA resolutions.", "danger")
         return redirect(url_for('dashboard'))
-        
+
     if request.method == 'POST':
         review_id = request.form.get('review_id')
         root_cause = request.form.get('root_cause')
         corrective_action = request.form.get('corrective_action')
         preventive_action = request.form.get('preventive_action')
-        
+
         insert_capa(
             review_id=review_id,
             root_cause=root_cause,
@@ -285,11 +294,14 @@ def capa():
         )
         flash(f"CAPA logged and Ticket #{review_id} resolved.", "success")
         return redirect(url_for('capa'))
-        
+
     claimed_reviews = [r for r in get_all_reviews() if r['status'] == 'Claimed' and r['claimed_by'] == session['user']['full_name']]
-    capa_logs = get_all_capa_logs()
-    
-    return render_template('internal/capa.html', claimed_reviews=claimed_reviews, capa_logs=capa_logs)
+    capa_logs = get_all_capa_logs_extended()
+    batches = get_all_batches(status='In-Progress')
+    stages = get_all_stages()
+
+    return render_template('internal/capa.html', claimed_reviews=claimed_reviews,
+                           capa_logs=capa_logs, batches=batches, stages=stages)
 
 @app.route('/portal/workflow')
 @login_required
@@ -450,6 +462,144 @@ def qc_entry():
     return render_template('internal/qc_entry.html', products=products)
 
 
+@app.route('/api/batch-info/<int:batch_id>')
+@login_required
+def api_batch_info(batch_id):
+    """Return basic batch info (batch_number, batch_size, product_name) for pre-filling AQL."""
+    b = get_batch(batch_id)
+    if not b:
+        return jsonify({'error': 'Batch not found'}), 404
+    return jsonify({
+        'batch_number': b['batch_number'],
+        'batch_size': b['batch_size'],
+        'product_name': b['product_name'],
+        'status': b['status'],
+    })
+
+
+@app.route('/api/stage-qc-submit', methods=['POST'])
+@login_required
+def api_stage_qc_submit():
+    """Accept stage-based QC results and insert into batch_records.
+
+    Expected JSON body:
+    {
+        "batch_id": 1,
+        "stage_id": 3,
+        "batch_size": 50000,
+        "aql_level": "1.0",
+        "results": [
+            {"checkpoint_id": 12, "checkpoint_name": "Hardness", "result_type": "numeric",
+             "samples": ["85.2", "87.1", "83.4"]},
+            {"checkpoint_id": 13, "checkpoint_name": "Appearance", "result_type": "passfail",
+             "samples": ["PASS", "PASS", "PASS"]},
+            ...
+        ]
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    batch_id = data.get('batch_id')
+    stage_id = data.get('stage_id')
+    batch_size = data.get('batch_size')
+    aql_level = data.get('aql_level', '')
+    results = data.get('results', [])
+
+    if not batch_id or not stage_id:
+        return jsonify({'error': 'batch_id and stage_id are required'}), 400
+
+    batch = get_batch(batch_id)
+    if not batch:
+        return jsonify({'error': 'Batch not found'}), 404
+
+    batch_number = batch['batch_number']
+    product_name = batch['product_name']
+    tested_by = session['user']['full_name']
+
+    saved_count = 0
+    errors = []
+
+    for r in results:
+        cp_name = r.get('checkpoint_name', '')
+        result_type = r.get('result_type', 'numeric')
+        raw_samples = [str(v).strip() for v in r.get('samples', []) if str(v).strip()]
+
+        if not raw_samples:
+            continue  # skip unanswered checkpoints
+
+        try:
+            if result_type == 'numeric':
+                numeric_vals = []
+                for v in raw_samples:
+                    try:
+                        numeric_vals.append(float(v))
+                    except ValueError:
+                        pass
+                if not numeric_vals:
+                    continue
+                mean = round(sum(numeric_vals) / len(numeric_vals), 4)
+                range_val = round(max(numeric_vals) - min(numeric_vals), 4)
+                # Tolerance check via stage_checkpoint tol_min / tol_max
+                cp = get_checkpoint_by_id(r.get('checkpoint_id')) if r.get('checkpoint_id') else None
+                tol_min = float(cp['tol_min']) if cp and cp['tol_min'] is not None else None
+                tol_max = float(cp['tol_max']) if cp and cp['tol_max'] is not None else None
+                if tol_min is not None and tol_max is not None:
+                    status = 'PASS' if tol_min <= mean <= tol_max else 'FAIL'
+                else:
+                    status = 'PASS'  # No spec defined; record as PASS
+                indiv_json = json.dumps(numeric_vals)
+                sample_count = len(numeric_vals)
+
+            elif result_type == 'passfail':
+                fail_count = sum(1 for v in raw_samples if v.upper() in ('FAIL', 'F', 'NO'))
+                status = 'FAIL' if fail_count > 0 else 'PASS'
+                mean = None
+                range_val = None
+                tol_min = None
+                tol_max = None
+                indiv_json = json.dumps(raw_samples)
+                sample_count = len(raw_samples)
+
+            else:  # text
+                status = 'PASS'
+                mean = None
+                range_val = None
+                tol_min = None
+                tol_max = None
+                indiv_json = json.dumps(raw_samples)
+                sample_count = len(raw_samples)
+
+            insert_batch_record(
+                batch_number=batch_number,
+                product_name=product_name,
+                checklist_id=None,
+                checkpoint=cp_name,
+                individual_values=indiv_json,
+                sample_count=sample_count,
+                mean=mean,
+                range_val=range_val,
+                tol_min=tol_min,
+                tol_max=tol_max,
+                status=status,
+                tested_by=tested_by,
+                batch_id=batch_id,
+                stage_id=stage_id,
+                batch_size=batch_size,
+                aql_level=aql_level,
+            )
+            saved_count += 1
+
+        except Exception as e:
+            errors.append(f'{cp_name}: {str(e)}')
+
+    if errors:
+        return jsonify({'status': 'partial', 'saved': saved_count, 'errors': errors}), 207
+
+    return jsonify({'status': 'ok', 'saved': saved_count}), 201
+
+
 @app.route('/api/qc-checklist/<path:product_name>')
 @login_required
 def api_qc_checklist(product_name):
@@ -509,7 +659,8 @@ def spc_dashboard():
         return redirect(url_for('dashboard'))
 
     products = get_distinct_qc_products()
-    return render_template('internal/spc_dashboard.html', products=products)
+    stages = get_all_stages()
+    return render_template('internal/spc_dashboard.html', products=products, stages=stages)
 
 
 @app.route('/api/spc-data')
@@ -518,11 +669,12 @@ def api_spc_data():
     """Return SPC chart data for a product+checkpoint combination."""
     product = request.args.get('product', '')
     checkpoint = request.args.get('checkpoint', '')
+    stage_id = request.args.get('stage_id', type=int)
 
     if not product or not checkpoint:
         return jsonify({'error': 'Product and checkpoint required'}), 400
 
-    records = get_batch_records_for_spc(product, checkpoint)
+    records = get_batch_records_for_spc(product, checkpoint, stage_id=stage_id)
     if not records:
         return jsonify({'batches': [], 'means': [], 'ranges': []}), 200
 
@@ -578,11 +730,12 @@ def api_spc_data():
 @app.route('/api/checkpoints')
 @login_required
 def api_checkpoints():
-    """Return checkpoints for a product."""
+    """Return checkpoints for a product, optionally filtered by stage."""
     product = request.args.get('product', '')
-    if not product:
+    stage_id = request.args.get('stage_id', type=int)
+    if not product and stage_id is None:
         return jsonify([]), 200
-    checkpoints = get_distinct_checkpoints(product)
+    checkpoints = get_distinct_checkpoints(product, stage_id=stage_id)
     return jsonify(checkpoints), 200
 
 
@@ -867,6 +1020,231 @@ def remove_spec(spec_id):
     delete_spec(spec_id)
     flash("Specification removed.", "success")
     return redirect(url_for('specs'))
+
+
+# ─── Batch Tracker ────────────────────────────────────────────────────────────
+
+@app.route('/portal/batch-tracker')
+@login_required
+def batch_tracker():
+    status_filter = request.args.get('status')
+    product_filter = request.args.get('product_id', type=int)
+    batches = get_all_batches(status=status_filter, product_id=product_filter)
+    products = get_all_products()
+    return render_template('internal/batch_tracker.html',
+                           batches=batches, products=products,
+                           status_filter=status_filter, product_filter=product_filter)
+
+
+@app.route('/portal/batch-tracker/create', methods=['POST'])
+@login_required
+def create_batch_route():
+    if session['user']['role'] not in ('Quality Manager', 'Executive', 'Admin'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('batch_tracker'))
+    batch_number = request.form.get('batch_number', '').strip()
+    product_id = request.form.get('product_id', type=int)
+    batch_size = request.form.get('batch_size', type=int)
+    if not batch_number or not product_id:
+        flash("Batch number and product are required.", "warning")
+        return redirect(url_for('batch_tracker'))
+    if get_batch_by_number(batch_number):
+        flash(f"Batch {batch_number} already exists.", "warning")
+        return redirect(url_for('batch_tracker'))
+    create_batch(batch_number, product_id, session['user']['full_name'], batch_size)
+    flash(f"Batch {batch_number} created.", "success")
+    return redirect(url_for('batch_tracker'))
+
+
+@app.route('/api/batch/<int:batch_id>/stages')
+@login_required
+def api_batch_stages(batch_id):
+    batch = get_batch(batch_id)
+    if not batch:
+        return jsonify({'error': 'Batch not found'}), 404
+    stages = get_stages_for_product(batch['product_id'])
+    results = get_batch_stage_results(batch_id)
+    result_map = {r['stage_id']: dict(r) for r in results}
+    pipeline = []
+    for s in stages:
+        r = result_map.get(s['id'], {})
+        pipeline.append({
+            'id': s['id'],
+            'stage_code': s['stage_code'],
+            'stage_name': s['stage_name'],
+            'layer': s['layer'],
+            'sequence_order': s['sequence_order'],
+            'verdict': r.get('verdict', 'NOT_STARTED'),
+            'signed_by': r.get('signed_by'),
+            'signed_at': r.get('signed_at'),
+            'notes': r.get('notes', ''),
+        })
+    return jsonify({'batch_id': batch_id, 'pipeline': pipeline})
+
+
+@app.route('/api/batch/<int:batch_id>/sign-stage', methods=['POST'])
+@login_required
+def api_sign_stage(batch_id):
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    data = request.get_json()
+    stage_id = data.get('stage_id')
+    verdict = data.get('verdict')
+    notes = data.get('notes', '')
+    if not stage_id or verdict not in ('PASS', 'FAIL'):
+        return jsonify({'error': 'stage_id and verdict (PASS/FAIL) required'}), 400
+    if not can_start_stage(batch_id, stage_id):
+        return jsonify({'error': 'Prerequisites not met — complete earlier stages first'}), 400
+    insert_batch_stage_result(batch_id, stage_id, verdict,
+                              signed_by=session['user']['full_name'], notes=notes)
+    batch = get_batch(batch_id)
+    stage = get_stage_by_id(stage_id)
+    # Advance batch status
+    if verdict == 'PASS':
+        stages = get_stages_for_product(batch['product_id'])
+        results = get_batch_stage_results(batch_id)
+        passed_ids = {r['stage_id'] for r in results if r['verdict'] == 'PASS'}
+        all_stage_ids = {s['id'] for s in stages}
+        if all_stage_ids == passed_ids:
+            update_batch_status(batch_id, 'Pending-Release', current_stage_id=stage_id)
+        else:
+            update_batch_status(batch_id, 'In-Progress', current_stage_id=stage_id)
+    else:
+        update_batch_status(batch_id, 'In-Progress', current_stage_id=stage_id)
+    return jsonify({'status': 'ok', 'verdict': verdict, 'stage_code': stage['stage_code']})
+
+
+@app.route('/api/batch/<int:batch_id>/release', methods=['POST'])
+@login_required
+def api_release_batch(batch_id):
+    if session['user']['role'] not in ('Executive', 'Admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    batch = get_batch(batch_id)
+    if not batch or batch['status'] != 'Pending-Release':
+        return jsonify({'error': 'Batch must be in Pending-Release status'}), 400
+    update_batch_status(batch_id, 'Released', released_by=session['user']['full_name'])
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/batch/<int:batch_id>/link-material', methods=['POST'])
+@login_required
+def api_link_material(batch_id):
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    data = request.get_json()
+    lot_id = data.get('material_lot_id')
+    qty = data.get('quantity_used')
+    unit = data.get('unit', '')
+    if not lot_id:
+        return jsonify({'error': 'material_lot_id required'}), 400
+    link_batch_material(batch_id, lot_id, qty, unit)
+    return jsonify({'status': 'ok'})
+
+
+# ─── Material Lots ─────────────────────────────────────────────────────────────
+
+@app.route('/portal/material-lots')
+@login_required
+def material_lots():
+    status_filter = request.args.get('status')
+    type_filter = request.args.get('material_type')
+    lots = get_all_material_lots(status=status_filter, material_type=type_filter)
+    return render_template('internal/material_lots.html',
+                           lots=lots, status_filter=status_filter, type_filter=type_filter)
+
+
+@app.route('/portal/material-lots/create', methods=['POST'])
+@login_required
+def create_material_lot_route():
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('material_lots'))
+    material_type = request.form.get('material_type')
+    material_name = request.form.get('material_name', '').strip()
+    lot_number = request.form.get('lot_number', '').strip()
+    supplier = request.form.get('supplier', '').strip()
+    received_date = request.form.get('received_date') or None
+    expiry_date = request.form.get('expiry_date') or None
+    quantity = request.form.get('quantity', type=float)
+    unit = request.form.get('unit', '').strip()
+    if not all([material_type, material_name, lot_number]):
+        flash("Material type, name, and lot number are required.", "warning")
+        return redirect(url_for('material_lots'))
+    create_material_lot(material_type, material_name, lot_number, supplier,
+                        received_date, expiry_date, quantity, unit)
+    flash(f"Lot {lot_number} created and placed in Quarantine.", "success")
+    return redirect(url_for('material_lots'))
+
+
+@app.route('/portal/material-lots/<int:lot_id>/release', methods=['POST'])
+@login_required
+def release_material_lot(lot_id):
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('material_lots'))
+    update_material_lot_status(lot_id, 'Released', released_by=session['user']['full_name'])
+    flash("Material lot released.", "success")
+    return redirect(url_for('material_lots'))
+
+
+@app.route('/portal/material-lots/<int:lot_id>/reject', methods=['POST'])
+@login_required
+def reject_material_lot(lot_id):
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('material_lots'))
+    update_material_lot_status(lot_id, 'Rejected', released_by=session['user']['full_name'])
+    flash("Material lot rejected.", "warning")
+    return redirect(url_for('material_lots'))
+
+
+# ─── Stage-Aware QC APIs ──────────────────────────────────────────────────────
+
+@app.route('/api/stage-checkpoints/<int:stage_id>')
+@login_required
+def api_stage_checkpoints(stage_id):
+    checkpoints = get_checkpoints_by_stage(stage_id)
+    return jsonify([dict(c) for c in checkpoints])
+
+
+@app.route('/api/stages')
+@login_required
+def api_stages():
+    product_form = request.args.get('product_form')
+    layer = request.args.get('layer')
+    stages = get_all_stages(layer=layer, product_form=product_form)
+    return jsonify([dict(s) for s in stages])
+
+
+@app.route('/api/batches-active')
+@login_required
+def api_batches_active():
+    """Return non-released batches for QC entry dropdowns."""
+    batches = get_all_batches()
+    active = [dict(b) for b in batches if b['status'] not in ('Released', 'Rejected')]
+    return jsonify(active)
+
+
+# ─── CAPA from QC Failures ────────────────────────────────────────────────────
+
+@app.route('/portal/capa/from-qc', methods=['POST'])
+@login_required
+def capa_from_qc():
+    if session['user']['role'] not in ('Quality Manager', 'Admin'):
+        flash("Unauthorized.", "danger")
+        return redirect(url_for('capa'))
+    batch_id = request.form.get('batch_id', type=int)
+    stage_id = request.form.get('stage_id', type=int)
+    root_cause = request.form.get('root_cause', '').strip()
+    corrective = request.form.get('corrective_action', '').strip()
+    preventive = request.form.get('preventive_action', '').strip()
+    if not all([batch_id, stage_id, root_cause, corrective, preventive]):
+        flash("All fields required.", "warning")
+        return redirect(url_for('capa'))
+    insert_capa_from_qc(batch_id, stage_id, root_cause, corrective, preventive,
+                        session['user']['full_name'])
+    flash("QC CAPA logged successfully.", "success")
+    return redirect(url_for('capa'))
 
 
 if __name__ == '__main__':

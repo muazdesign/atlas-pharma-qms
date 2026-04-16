@@ -75,14 +75,60 @@
 
     <!-- History -->
     <div>
-        <h3 style="color: #333; margin-bottom: 24px;">📜 Resolution History</h3>
+        <h3 style="color: #333; margin-bottom: 12px;">📜 Resolution History</h3>
+
+        <!-- QC Failure CAPA Form -->
+        <div class="card" style="margin-bottom:20px;border-left:4px solid #dc3545;">
+            <h4 style="color:#dc3545;margin:0 0 16px;">⚠ Log CAPA from QC Failure</h4>
+            <p style="color:#888;font-size:13px;margin-bottom:16px;">Use this when a batch fails a QC stage inspection — not a customer complaint.</p>
+            <form method="POST" action="/portal/capa/from-qc">
+                <div class="form-group">
+                    <label>Batch</label>
+                    <select name="batch_id" class="form-control" id="qcCapaBatch" required>
+                        <option value="">Select batch...</option>
+                        {% for b in batches %}
+                        <option value="{{ b.id }}">{{ b.batch_number }} ({{ b.product_name }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Failed Stage</label>
+                    <select name="stage_id" class="form-control" required>
+                        <option value="">Select stage...</option>
+                        {% for s in stages %}
+                        <option value="{{ s.id }}">{{ s.stage_code }} — {{ s.stage_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Root Cause *</label>
+                    <textarea name="root_cause" class="form-control" rows="2" placeholder="Identified root cause of QC failure..." required></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Corrective Action *</label>
+                    <textarea name="corrective_action" class="form-control" rows="2" placeholder="Immediate corrective steps taken..." required></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Preventive Action *</label>
+                    <textarea name="preventive_action" class="form-control" rows="2" placeholder="Measures to prevent recurrence..." required></textarea>
+                </div>
+                <button type="submit" class="btn btn-danger">Log QC CAPA</button>
+            </form>
+        </div>
+
         {% if capa_logs %}
             {% for log in capa_logs %}
             <div class="capa-card">
                 <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
                     <div>
-                        <strong>CAPA #{{ log.id }}</strong> <span style="color:#aaa;">→</span> Ticket #{{ log.review_id }}<br>
-                        <span style="font-size: 0.8rem; color: #777;">{{ log.batch_number }}</span>
+                        <strong>CAPA #{{ log.id }}</strong>
+                        {% if log.source_type == 'qc_failure' %}
+                            <span style="background:#f8d7da;color:#721c24;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">QC Failure</span>
+                            <br><span style="font-size:0.8rem;color:#777;">Batch: {{ log.qc_batch or '—' }} | Stage: {{ log.stage_code or '—' }}</span>
+                        {% else %}
+                            <span style="background:#d4edda;color:#155724;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;">Complaint</span>
+                            <br><span style="font-size:0.8rem;color:#777;">Ticket #{{ log.review_id }} — {{ log.review_batch or '—' }}</span>
+                        {% endif %}
                     </div>
                     <span class="tag" style="background:#d4edda; color:#155724;">Resolved</span>
                 </div>
@@ -91,7 +137,7 @@
                     <strong>🔧 Corrective:</strong> {{ log.corrective_action }}<br>
                     <strong>🛡️ Preventive:</strong> {{ log.preventive_action }}<br>
                     <div style="margin-top: 8px; font-size: 0.75rem; color: #999;">
-                        Resolved by {{ log.manager_assigned }} on {{ log.resolved_at[:16] }}
+                        By {{ log.manager_assigned }} on {{ log.resolved_at[:16] if log.resolved_at else '—' }}
                     </div>
                 </div>
             </div>

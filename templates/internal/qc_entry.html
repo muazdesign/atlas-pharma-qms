@@ -5,10 +5,172 @@
 <div class="portal-topbar">
     <div>
         <h1>🧪 QC Data Entry</h1>
-        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Select a product and batch to begin quality control testing.</p>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">Enter quality control test results by batch stage or ad-hoc.</p>
     </div>
 </div>
 
+<!-- Mode tabs -->
+<div style="display:flex;gap:0;margin-bottom:24px;border-bottom:2px solid #e0e0e0;">
+    <button id="tabStage" onclick="switchMode('stage')"
+        style="padding:10px 24px;border:none;background:none;cursor:pointer;font-size:14px;font-weight:600;color:#0056b3;border-bottom:3px solid #0056b3;margin-bottom:-2px;">
+        🏭 Stage-Based Entry
+    </button>
+    <button id="tabLegacy" onclick="switchMode('legacy')"
+        style="padding:10px 24px;border:none;background:none;cursor:pointer;font-size:14px;font-weight:600;color:#888;border-bottom:3px solid transparent;margin-bottom:-2px;">
+        🧪 Ad-Hoc / Legacy Entry
+    </button>
+</div>
+
+<!-- ── STAGE-BASED ENTRY ─────────────────────────────────── -->
+<div id="modeStage">
+
+    <!-- Step 1: Batch + AQL + Stage setup -->
+    <div class="card qc-setup-card" style="padding:28px;margin-bottom:24px;">
+        <h3 style="color:#0056b3;margin-bottom:20px;">📋 Test Setup</h3>
+
+        <!-- Row 1: Batch selector -->
+        <div class="form-row" style="margin-bottom:12px;">
+            <div class="form-group">
+                <label for="stageBatchSelect">Production Batch</label>
+                <select id="stageBatchSelect" class="form-control" onchange="onStageBatchChange()">
+                    <option value="">Loading batches…</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="stageBatchNumber">Batch Number</label>
+                <input type="text" id="stageBatchNumber" class="form-control" readonly
+                       style="background:#f8f9fa;" placeholder="auto-filled">
+            </div>
+        </div>
+
+        <!-- Row 2: AQL Parameters (mirrors legacy) -->
+        <div class="aql-section" id="stageAqlSection">
+            <h4 style="color:#0056b3;margin-bottom:16px;font-size:0.95rem;">
+                📐 AQL Sampling Parameters
+                <span style="font-weight:400;color:#888;font-size:0.8rem;margin-left:8px;">ANSI/ASQ Z1.4 / Z1.9</span>
+            </h4>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="s_batchSize">Batch Size (Lot Size)</label>
+                    <input type="number" id="s_batchSize" class="form-control"
+                           placeholder="auto-filled from batch" min="2" oninput="calcStageAQL()">
+                </div>
+                <div class="form-group">
+                    <label for="s_inspectionLevel">Inspection Level</label>
+                    <select id="s_inspectionLevel" class="form-control" onchange="calcStageAQL()">
+                        <option value="S-1">S-1 (Special — Reduced)</option>
+                        <option value="S-2">S-2 (Special)</option>
+                        <option value="S-3">S-3 (Special)</option>
+                        <option value="S-4">S-4 (Special — Higher)</option>
+                        <option value="I">I (Reduced)</option>
+                        <option value="II" selected>II (Normal)</option>
+                        <option value="III">III (Tightened)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="s_aqlLevel">AQL Level (%)</label>
+                    <select id="s_aqlLevel" class="form-control" onchange="calcStageAQL()">
+                        <option value="0.065">0.065%</option>
+                        <option value="0.10">0.10%</option>
+                        <option value="0.15">0.15%</option>
+                        <option value="0.25">0.25%</option>
+                        <option value="0.40">0.40%</option>
+                        <option value="0.65">0.65%</option>
+                        <option value="1.0" selected>1.0%</option>
+                        <option value="1.5">1.5%</option>
+                        <option value="2.5">2.5%</option>
+                        <option value="4.0">4.0%</option>
+                        <option value="6.5">6.5%</option>
+                        <option value="10.0">10.0%</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="s_samplingType">Sampling Standard</label>
+                    <select id="s_samplingType" class="form-control" onchange="calcStageAQL()">
+                        <option value="attributes">Z1.4 — Attributes</option>
+                        <option value="variables" selected>Z1.9 — Variables</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- AQL Result Panel -->
+            <div class="aql-result-panel" id="s_aqlResultPanel" style="display:none;">
+                <div class="aql-result-header">
+                    <strong>📊 AQL Sampling Recommendation</strong>
+                    <span class="aql-standard-tag" id="s_aqlStandardTag">ANSI/ASQ Z1.9</span>
+                </div>
+                <div class="aql-result-grid">
+                    <div class="aql-result-item">
+                        <span class="aql-result-label">Code Letter</span>
+                        <span class="aql-result-value" id="s_aqlCodeLetter">—</span>
+                    </div>
+                    <div class="aql-result-item">
+                        <span class="aql-result-label">Sample Size (AQL)</span>
+                        <span class="aql-result-value aql-highlight" id="s_aqlSampleSize">—</span>
+                    </div>
+                    <div class="aql-result-item" id="s_aqlAcceptRejectBlock">
+                        <span class="aql-result-label">Accept / Reject</span>
+                        <span class="aql-result-value" id="s_aqlAcceptReject">— / —</span>
+                    </div>
+                    <div class="aql-result-item" id="s_aqlKValueBlock" style="display:none;">
+                        <span class="aql-result-label">k Value</span>
+                        <span class="aql-result-value" id="s_aqlKValue">—</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: Stage selector + Load button -->
+        <div class="form-row" style="margin-top:16px;align-items:flex-end;">
+            <div class="form-group">
+                <label for="stageSelect">Manufacturing Stage</label>
+                <select id="stageSelect" class="form-control" disabled>
+                    <option value="">Select batch first…</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex:0 0 auto;">
+                <label>&nbsp;</label>
+                <button type="button" id="loadStageBtn" class="btn btn-primary" disabled
+                        onclick="loadStageCheckpoints()">
+                    🔬 Load Stage Checkpoints
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Checkpoint list (shown after Load) -->
+    <div id="stageCheckpointArea" style="display:none;">
+        <div class="card" style="padding:24px;margin-bottom:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="color:#0056b3;margin:0;" id="stageCheckpointTitle">Stage Checkpoints</h3>
+                <div style="display:flex;gap:8px;font-size:12px;color:#888;">
+                    <span id="s_aqlSummary"></span>
+                </div>
+            </div>
+            <div id="stageCheckpointList"></div>
+        </div>
+
+        <!-- Submit card -->
+        <div class="card" style="padding:24px;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Tested By</label>
+                    <input type="text" id="stageTestedBy" class="form-control"
+                           value="{{ session.user.full_name }}" readonly style="background:#f8f9fa;">
+                </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;">
+                <button class="btn btn-success" onclick="submitStageTests()">
+                    💾 Save Stage QC Results
+                </button>
+                <span id="stageResultMsg" style="display:none;"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── LEGACY / AD-HOC ENTRY ─────────────────────────────── -->
+<div id="modeLegacy" style="display:none;">
 <!-- Step 1: Product & Batch Selection -->
 <div class="card qc-setup-card" style="padding: 28px; margin-bottom: 24px;">
     <h3 style="color: #0056b3; margin-bottom: 20px;">📋 Test Setup</h3>
@@ -140,6 +302,8 @@
 
 <!-- Success/Error message -->
 <div id="qcResultMsg" style="display: none; margin-top: 20px;"></div>
+
+</div><!-- /#modeLegacy -->
 
 {% endblock %}
 
@@ -586,5 +750,395 @@ document.addEventListener('DOMContentLoaded', () => {
         aqlResultPanel.style.display = 'none';
     });
 });
+</script>
+
+<!-- ── Stage-Based Entry JS ──────────────────────────────────────── -->
+<script>
+// ── Mode tab switching ───────────────────────────────────────────────
+function switchMode(mode) {
+    document.getElementById('modeStage').style.display  = mode === 'stage'  ? '' : 'none';
+    document.getElementById('modeLegacy').style.display = mode === 'legacy' ? '' : 'none';
+    const tabS = document.getElementById('tabStage');
+    const tabL = document.getElementById('tabLegacy');
+    if (mode === 'stage') {
+        tabS.style.color = '#0056b3'; tabS.style.borderBottomColor = '#0056b3';
+        tabL.style.color = '#888';    tabL.style.borderBottomColor = 'transparent';
+    } else {
+        tabL.style.color = '#0056b3'; tabL.style.borderBottomColor = '#0056b3';
+        tabS.style.color = '#888';    tabS.style.borderBottomColor = 'transparent';
+    }
+}
+
+// ── Load active batches into dropdown ────────────────────────────────
+fetch('/api/batches-active')
+    .then(r => r.json())
+    .then(batches => {
+        const sel = document.getElementById('stageBatchSelect');
+        sel.innerHTML = '<option value="">— Select Batch —</option>';
+        batches.forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b.id;
+            opt.textContent = `${b.batch_number} (${b.product_name}) — ${b.status}`;
+            sel.appendChild(opt);
+        });
+        // Auto-select from URL param
+        const urlBatchId = new URLSearchParams(window.location.search).get('batch_id');
+        if (urlBatchId) {
+            switchMode('stage');
+            setTimeout(async () => {
+                sel.value = urlBatchId;
+                await onStageBatchChange();
+                const urlStageId = new URLSearchParams(window.location.search).get('stage_id');
+                if (urlStageId) {
+                    document.getElementById('stageSelect').value = urlStageId;
+                    updateLoadBtn();
+                }
+            }, 400);
+        }
+    });
+
+// ── AQL calculation for stage mode ──────────────────────────────────
+let stageAqlData = null;
+
+async function calcStageAQL() {
+    const bs = parseInt(document.getElementById('s_batchSize').value);
+    const panel = document.getElementById('s_aqlResultPanel');
+    if (!bs || bs < 2) { panel.style.display = 'none'; stageAqlData = null; updateLoadBtn(); return; }
+
+    const level = document.getElementById('s_inspectionLevel').value;
+    const aql   = document.getElementById('s_aqlLevel').value;
+    const type  = document.getElementById('s_samplingType').value;
+
+    try {
+        const res = await fetch(`/api/aql-sample?batch_size=${bs}&level=${level}&aql=${aql}&type=${type}`);
+        stageAqlData = await res.json();
+        if (stageAqlData.error) { panel.style.display = 'none'; stageAqlData = null; updateLoadBtn(); return; }
+
+        document.getElementById('s_aqlCodeLetter').textContent  = stageAqlData.code_letter;
+        document.getElementById('s_aqlSampleSize').textContent  = stageAqlData.sample_size;
+        document.getElementById('s_aqlStandardTag').textContent = stageAqlData.standard;
+
+        if (type === 'attributes') {
+            document.getElementById('s_aqlAcceptRejectBlock').style.display = '';
+            document.getElementById('s_aqlKValueBlock').style.display = 'none';
+            document.getElementById('s_aqlAcceptReject').textContent =
+                `${stageAqlData.accept_number} / ${stageAqlData.reject_number}`;
+        } else {
+            document.getElementById('s_aqlAcceptRejectBlock').style.display = 'none';
+            document.getElementById('s_aqlKValueBlock').style.display = '';
+            document.getElementById('s_aqlKValue').textContent =
+                stageAqlData.k_value !== null ? stageAqlData.k_value.toFixed(3) : 'N/A';
+        }
+        panel.style.display = 'block';
+    } catch (e) {
+        panel.style.display = 'none';
+        stageAqlData = null;
+    }
+    updateLoadBtn();
+}
+
+// ── Batch change → fetch batch info + populate stages ────────────────
+async function onStageBatchChange() {
+    const sel = document.getElementById('stageBatchSelect');
+    const batchId = sel.value;
+    const stageEl = document.getElementById('stageSelect');
+
+    document.getElementById('stageCheckpointArea').style.display = 'none';
+    document.getElementById('stageBatchNumber').value = '';
+
+    if (!batchId) {
+        stageEl.innerHTML = '<option value="">Select batch first…</option>';
+        stageEl.disabled = true;
+        updateLoadBtn();
+        return;
+    }
+
+    // Fetch batch info to pre-fill batch size
+    try {
+        const info = await fetch(`/api/batch-info/${batchId}`).then(r => r.json());
+        document.getElementById('stageBatchNumber').value = info.batch_number || '';
+        if (info.batch_size) {
+            document.getElementById('s_batchSize').value = info.batch_size;
+            await calcStageAQL();
+        }
+    } catch (e) {}
+
+    // Load stages for this batch
+    stageEl.innerHTML = '<option value="">Loading stages…</option>';
+    stageEl.disabled = true;
+    try {
+        const resp = await fetch(`/api/batch/${batchId}/stages`);
+        const data = await resp.json();
+        stageEl.innerHTML = '<option value="">— Select Stage —</option>';
+        (data.pipeline || []).forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${s.stage_code} — ${s.stage_name} [${s.verdict}]`;
+            stageEl.appendChild(opt);
+        });
+        stageEl.disabled = false;
+    } catch (e) {
+        stageEl.innerHTML = '<option value="">Error loading stages</option>';
+    }
+    updateLoadBtn();
+}
+
+function updateLoadBtn() {
+    const batchId  = document.getElementById('stageBatchSelect').value;
+    const stageId  = document.getElementById('stageSelect').value;
+    document.getElementById('loadStageBtn').disabled = !(batchId && stageId);
+}
+document.getElementById('stageSelect').addEventListener('change', updateLoadBtn);
+
+// ── Load checkpoints ──────────────────────────────────────────────────
+let stageCheckpointData = [];
+let stageAqlSampleSize = 1;
+
+async function loadStageCheckpoints() {
+    const stageId = document.getElementById('stageSelect').value;
+    if (!stageId) return;
+
+    // Determine effective sample size from AQL result
+    stageAqlSampleSize = (stageAqlData && stageAqlData.sample_size)
+        ? parseInt(stageAqlData.sample_size) : 1;
+
+    const area = document.getElementById('stageCheckpointArea');
+    const title = document.getElementById('stageCheckpointTitle');
+    const list  = document.getElementById('stageCheckpointList');
+
+    area.style.display = 'block';
+    title.textContent  = 'Loading checkpoints…';
+    list.innerHTML     = '<p style="color:#888;padding:12px;">Fetching…</p>';
+
+    try {
+        const checkpoints = await fetch(`/api/stage-checkpoints/${stageId}`).then(r => r.json());
+        stageCheckpointData = checkpoints;
+        renderStageCheckpoints(checkpoints);
+
+        // Summary badge
+        document.getElementById('s_aqlSummary').textContent =
+            stageAqlData ? `AQL n = ${stageAqlSampleSize}` : '';
+        title.textContent = `${checkpoints.length} Checkpoints`;
+    } catch (e) {
+        list.innerHTML = `<p style="color:red;">Error loading checkpoints.</p>`;
+    }
+}
+
+// ── Render checkpoints with type-aware multi-sample inputs ───────────
+function renderStageCheckpoints(checkpoints) {
+    const list = document.getElementById('stageCheckpointList');
+    if (!checkpoints.length) {
+        list.innerHTML = '<p style="color:#888;">No checkpoints for this stage.</p>';
+        return;
+    }
+
+    const TYPE_COLORS = { numeric: '#e8f0fe', passfail: '#fce8e6', text: '#e6f4ea' };
+    const TYPE_LABELS = { numeric: '📊 Numeric', passfail: '✅ Pass/Fail', text: '📝 Text' };
+
+    let html = '';
+    let lastSection = '';
+
+    checkpoints.forEach((c, idx) => {
+        if (c.section !== lastSection) {
+            lastSection = c.section;
+            html += `<div style="font-size:11px;font-weight:700;color:#0056b3;
+                         text-transform:uppercase;letter-spacing:.5px;
+                         margin:20px 0 8px;padding-bottom:4px;
+                         border-bottom:2px solid #e8edf5;">${c.section}</div>`;
+        }
+
+        const rtype = c.result_type || 'numeric';
+
+        // Number of sample slots:
+        // - text: always 1
+        // - numeric/passfail: use checkpoint's own sample_count; if AQL gave a bigger number, use that for IQC/FQC
+        let n;
+        if (rtype === 'text') {
+            n = 1;
+        } else {
+            n = Math.max(c.sample_count || 1, 1);
+            // For IQC stages the AQL sample size overrides if larger
+            if (stageAqlSampleSize > n && c.sample_size && c.sample_size.toLowerCase().includes('aql')) {
+                n = stageAqlSampleSize;
+            }
+            n = Math.min(n, 50); // cap at 50 to avoid runaway rendering
+        }
+
+        // Build input HTML
+        let inputsHtml = '';
+        if (rtype === 'passfail') {
+            for (let i = 0; i < n; i++) {
+                inputsHtml += `
+                <div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;margin-right:6px;">
+                    <span style="font-size:10px;color:#888;">S${i+1}</span>
+                    <select class="form-control s-input" data-cidx="${idx}" data-i="${i}"
+                            style="width:90px;padding:4px 6px;font-size:12px;"
+                            onchange="recalcStage(${idx})">
+                        <option value="">—</option>
+                        <option value="PASS">✅ PASS</option>
+                        <option value="FAIL">❌ FAIL</option>
+                        <option value="NA">N/A</option>
+                    </select>
+                </div>`;
+            }
+        } else if (rtype === 'text') {
+            inputsHtml = `<input type="text" class="form-control s-input" data-cidx="${idx}" data-i="0"
+                style="min-width:260px;" placeholder="Enter result / reference…"
+                oninput="recalcStage(${idx})">`;
+        } else { // numeric
+            for (let i = 0; i < n; i++) {
+                inputsHtml += `
+                <div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;margin-right:4px;">
+                    <span style="font-size:10px;color:#888;">S${i+1}</span>
+                    <input type="number" step="any" class="form-control s-input"
+                           data-cidx="${idx}" data-i="${i}"
+                           style="width:82px;padding:4px 6px;"
+                           placeholder="${i+1}"
+                           oninput="recalcStage(${idx})">
+                </div>`;
+            }
+        }
+
+        html += `
+        <div style="border:1px solid #e8e8e8;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:#fff;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">
+                <div style="flex:1;">
+                    <strong style="font-size:13px;">${c.checkpoint_no}. ${c.checkpoint_name}</strong>
+                    <div style="font-size:11px;color:#555;margin-top:4px;">
+                        ${c.tolerance ? `<span style="background:#f0f4ff;padding:2px 8px;border-radius:4px;margin-right:6px;">📏 ${c.tolerance}</span>` : ''}
+                        ${c.unit ? `<span style="background:#f0f4ff;padding:2px 8px;border-radius:4px;margin-right:6px;">${c.unit}</span>` : ''}
+                        ${c.frequency ? `<span style="color:#888;">⏱ ${c.frequency}</span>` : ''}
+                    </div>
+                </div>
+                <span style="background:${TYPE_COLORS[rtype]};color:#333;padding:2px 10px;
+                             border-radius:12px;font-size:11px;white-space:nowrap;flex-shrink:0;">
+                    ${TYPE_LABELS[rtype]}
+                </span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:2px;align-items:flex-end;margin-bottom:8px;">
+                ${inputsHtml}
+            </div>
+            <div style="font-size:12px;" id="stageResult_${idx}">
+                <span style="color:#aaa;">— enter values above —</span>
+            </div>
+        </div>`;
+    });
+
+    list.innerHTML = html;
+}
+
+// ── Live recalc per checkpoint ────────────────────────────────────────
+function recalcStage(cidx) {
+    const c   = stageCheckpointData[cidx];
+    const el  = document.getElementById(`stageResult_${cidx}`);
+    const rtype = c.result_type || 'numeric';
+
+    const inputs = document.querySelectorAll(`.s-input[data-cidx="${cidx}"]`);
+    const vals   = Array.from(inputs).map(i => i.value.trim()).filter(v => v && v !== '');
+
+    if (!vals.length) { el.innerHTML = '<span style="color:#aaa;">— enter values above —</span>'; return; }
+
+    if (rtype === 'text') {
+        el.innerHTML = `<span style="color:#555;font-size:12px;">📝 Recorded</span>`;
+        return;
+    }
+
+    if (rtype === 'passfail') {
+        const fails  = vals.filter(v => v.toUpperCase() === 'FAIL').length;
+        const answered = vals.filter(v => v !== '').length;
+        const color  = fails > 0 ? '#721c24' : '#155724';
+        el.innerHTML = `<span style="color:${color};font-weight:600;">
+            ${fails > 0 ? `❌ ${fails} FAIL(s) / ${answered} answered` : `✅ ${answered} PASS(es)`}
+        </span>`;
+        return;
+    }
+
+    // numeric
+    const nums = vals.map(v => parseFloat(v)).filter(v => !isNaN(v));
+    if (!nums.length) { el.innerHTML = '<span style="color:#aaa;">— enter numeric values —</span>'; return; }
+
+    const mean  = nums.reduce((a, b) => a + b, 0) / nums.length;
+    const range = nums.length > 1 ? Math.max(...nums) - Math.min(...nums) : 0;
+    const pass  = (c.tol_min == null || mean >= c.tol_min) &&
+                  (c.tol_max == null || mean <= c.tol_max);
+    const complete = nums.length >= (c.sample_count || 1);
+    const color    = !complete ? '#856404' : (pass ? '#155724' : '#721c24');
+    const label    = !complete ? `${nums.length} / ${c.sample_count} samples` :
+                                 (pass ? '✓ PASS' : '✗ FAIL');
+
+    el.innerHTML = `<span style="color:${color};font-weight:600;">${label}</span>
+        &nbsp;|&nbsp; Mean: <strong>${mean.toFixed(3)}</strong>
+        &nbsp;|&nbsp; Range: <strong>${range.toFixed(3)}</strong>`;
+}
+
+// ── Submit all stage QC results ──────────────────────────────────────
+async function submitStageTests() {
+    const batchId  = document.getElementById('stageBatchSelect').value;
+    const stageId  = document.getElementById('stageSelect').value;
+    const batchNum = document.getElementById('stageBatchNumber').value;
+    const msgEl    = document.getElementById('stageResultMsg');
+
+    if (!batchId || !stageId || !batchNum) {
+        msgEl.style.display = 'inline';
+        msgEl.className = 'alert alert-warning';
+        msgEl.textContent = '⚠️ Please select a batch and stage first.';
+        return;
+    }
+
+    // Collect results grouped by checkpoint
+    const results = [];
+    stageCheckpointData.forEach((c, idx) => {
+        const inputs  = document.querySelectorAll(`.s-input[data-cidx="${idx}"]`);
+        const samples = Array.from(inputs).map(i => i.value.trim()).filter(v => v && v !== '' && v !== undefined);
+        if (!samples.length) return;
+        results.push({
+            checkpoint_id:   c.id,
+            checkpoint_name: c.checkpoint_name,
+            result_type:     c.result_type || 'numeric',
+            samples:         samples
+        });
+    });
+
+    if (!results.length) {
+        msgEl.style.display = 'inline';
+        msgEl.className = 'alert alert-warning';
+        msgEl.textContent = '⚠️ Enter at least one result before saving.';
+        return;
+    }
+
+    msgEl.style.display = 'inline';
+    msgEl.className = 'alert alert-info';
+    msgEl.textContent = '⏳ Saving…';
+
+    try {
+        const res = await fetch('/api/stage-qc-submit', {
+            method:  'POST',
+            headers: {'Content-Type': 'application/json'},
+            body:    JSON.stringify({
+                batch_id:   parseInt(batchId),
+                stage_id:   parseInt(stageId),
+                batch_size: parseInt(document.getElementById('s_batchSize').value) || null,
+                aql_level:  `${document.getElementById('s_inspectionLevel').value} / AQL ${document.getElementById('s_aqlLevel').value}`,
+                results:    results
+            })
+        });
+        const data = await res.json();
+
+        if (res.ok || res.status === 207) {
+            msgEl.className = 'alert alert-success';
+            msgEl.innerHTML = `✅ <strong>${data.saved}</strong> checkpoint(s) saved.
+                ${data.errors ? `<br><small style="color:#856404;">⚠️ ${data.errors.join(', ')}</small>` : ''}
+                &nbsp;<a href="/portal/batch-tracker" style="text-decoration:underline;">Return to Batch Tracker →</a>`;
+            // Disable all inputs
+            document.querySelectorAll('.s-input').forEach(i => i.disabled = true);
+        } else {
+            msgEl.className = 'alert alert-danger';
+            msgEl.textContent = '❌ ' + (data.error || 'Failed to save results.');
+        }
+    } catch (e) {
+        msgEl.className = 'alert alert-danger';
+        msgEl.textContent = '❌ Network error. Please try again.';
+    }
+}
 </script>
 {% endblock %}

@@ -34,6 +34,14 @@
                 <a href="/portal/specs" class="{% if active_page == 'specs' %}active{% endif %}">
                     <span class="nav-icon">📋</span> Specs & Partners
                 </a>
+                {% if session.user.role in ['Quality Manager', 'Executive', 'Admin'] %}
+                <a href="/portal/batch-tracker" class="{% if active_page == 'batch_tracker' %}active{% endif %}">
+                    <span class="nav-icon">🏭</span> Batch Tracker
+                </a>
+                <a href="/portal/material-lots" class="{% if active_page == 'material_lots' %}active{% endif %}">
+                    <span class="nav-icon">🧱</span> Material Lots
+                </a>
+                {% endif %}
                 {% if session.user.role in ['Quality Manager', 'Executive'] %}
                 <a href="/portal/qc-entry" class="{% if active_page == 'qc_entry' %}active{% endif %}">
                     <span class="nav-icon">🧪</span> QC Data Entry
@@ -42,7 +50,7 @@
                     <span class="nav-icon">📈</span> SPC Dashboard
                 </a>
                 {% endif %}
-                {% if session.user.role == 'Quality Manager' %}
+                {% if session.user.role in ['Quality Manager', 'Admin'] %}
                 <a href="/portal/capa" class="{% if active_page == 'capa' %}active{% endif %}">
                     <span class="nav-icon">🛠️</span> CAPA Tracker
                 </a>

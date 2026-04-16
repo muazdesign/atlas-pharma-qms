@@ -42,6 +42,15 @@
             </select>
         </div>
         <div class="form-group" style="margin-bottom: 0;">
+            <label for="spcStage">Stage <span style="font-weight:400;color:#888;font-size:0.8rem;">(optional)</span></label>
+            <select id="spcStage" class="form-control" onchange="onSpcStageChange()">
+                <option value="">— All Stages —</option>
+                {% for s in stages %}
+                <option value="{{ s.id }}" data-layer="{{ s.layer }}">{{ s.stage_code }} — {{ s.stage_name }} ({{ s.layer }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
             <label for="spcCheckpoint">Checkpoint</label>
             <select id="spcCheckpoint" class="form-control" disabled>
                 <option value="" disabled selected>— Select Checkpoint —</option>
@@ -162,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Checkpoint mode elements
     const productSelect = document.getElementById('spcProduct');
+    const stageSelect = document.getElementById('spcStage');
     const checkpointSelect = document.getElementById('spcCheckpoint');
 
     // Batch mode elements
@@ -205,14 +215,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── CHECKPOINT MODE ──
 
-    // Load checkpoints on product change
+    // Reload checkpoints when stage filter changes
+    window.onSpcStageChange = function() {
+        if (productSelect.value) productSelect.dispatchEvent(new Event('change'));
+    };
+
+    // Load checkpoints on product change (respects stage filter)
     productSelect.addEventListener('change', async () => {
         const product = productSelect.value;
+        const stageId = stageSelect ? stageSelect.value : '';
         checkpointSelect.innerHTML = '<option value="" disabled selected>— Loading... —</option>';
         checkpointSelect.disabled = true;
 
         try {
-            const res = await fetch(`/api/checkpoints?product=${encodeURIComponent(product)}`);
+            let url = `/api/checkpoints?product=${encodeURIComponent(product)}`;
+            if (stageId) url += `&stage_id=${stageId}`;
+            const res = await fetch(url);
             const checkpoints = await res.json();
 
             checkpointSelect.innerHTML = '<option value="" disabled selected>— Select Checkpoint —</option>';
@@ -229,14 +247,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Load SPC data on checkpoint change
+    // Load SPC data on checkpoint change (includes stage_id if set)
     checkpointSelect.addEventListener('change', async () => {
         const product = productSelect.value;
         const checkpoint = checkpointSelect.value;
+        const stageId = stageSelect ? stageSelect.value : '';
         if (!product || !checkpoint) return;
 
         try {
-            const res = await fetch(`/api/spc-data?product=${encodeURIComponent(product)}&checkpoint=${encodeURIComponent(checkpoint)}`);
+            let url = `/api/spc-data?product=${encodeURIComponent(product)}&checkpoint=${encodeURIComponent(checkpoint)}`;
+            if (stageId) url += `&stage_id=${stageId}`;
+            const res = await fetch(url);
             const data = await res.json();
 
             if (!data.batches || data.batches.length === 0) {
