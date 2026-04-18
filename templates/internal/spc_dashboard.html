@@ -3,6 +3,7 @@
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -86,13 +87,13 @@
     <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 24px;" id="spcKpis">
     </div>
 
-    <!-- X-bar Chart -->
+    <!-- Individual Values / X-bar Chart -->
     <div class="chart-card" style="margin-bottom: 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <h3>X̄ (Mean) Control Chart</h3>
-            <div style="display: flex; gap: 16px; font-size: 0.75rem; color: #888;">
-                <span><span style="display:inline-block;width:12px;height:3px;background:#0056b3;vertical-align:middle;margin-right:4px;"></span>X̄</span>
-                <span><span style="display:inline-block;width:12px;height:3px;background:#28a745;vertical-align:middle;margin-right:4px;border-style:dashed;"></span>CL</span>
+            <h3 id="xbarChartTitle">Individual Values Chart</h3>
+            <div style="display: flex; gap: 16px; font-size: 0.75rem; color: #888;" id="xbarChartLegend">
+                <span><span style="display:inline-block;width:12px;height:3px;background:#0056b3;vertical-align:middle;margin-right:4px;"></span>Sample</span>
+                <span><span style="display:inline-block;width:12px;height:3px;background:#28a745;vertical-align:middle;margin-right:4px;border-style:dashed;"></span>Mean</span>
                 <span><span style="display:inline-block;width:12px;height:3px;background:#dc3545;vertical-align:middle;margin-right:4px;border-style:dashed;"></span>UCL/LCL</span>
                 <span><span style="display:inline-block;width:12px;height:3px;background:#fd7e14;vertical-align:middle;margin-right:4px;border-style:dotted;"></span>Spec Limits</span>
             </div>
@@ -274,10 +275,25 @@ document.addEventListener('DOMContentLoaded', () => {
             chartsArea.style.display = 'block';
             batchResultsArea.style.display = 'none';
 
-            renderKPIs(data);
-            renderXbarChart(data);
-            renderRChart(data);
-            renderInterpretation(data, checkpoint);
+            // Show/hide charts based on data type
+            const rCard = document.querySelector('#spcChartsArea .chart-card:nth-of-type(2)');
+            if (data.chart_type === 'attribute') {
+                // P-chart mode — hide R-chart row, use X-bar container as p-chart
+                if (rCard) rCard.style.display = 'none';
+                renderPChartKPIs(data);
+                renderPChart(data);
+                renderAttributeInterpretation(data, checkpoint);
+            } else {
+                // R-chart only meaningful with 2+ batches
+                if (rCard) rCard.style.display = data.batches.length >= 2 ? 'block' : 'none';
+                // Reset chart title back to variable mode
+                const titleEl = document.getElementById('xbarChartTitle');
+                if (titleEl) titleEl.textContent = 'Individual Values Chart';
+                renderKPIs(data);
+                renderXbarChart(data);
+                if (data.batches.length >= 2) renderRChart(data);
+                renderInterpretation(data, checkpoint);
+            }
 
         } catch (err) {
             console.error(err);
@@ -370,84 +386,98 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
 
+    // Build annotation line objects for CL / UCL / LCL / Spec limits
+    function buildHorizontalLineAnnotations(data) {
+        const lines = {
+            cl: hLine('CL (X̿)', data.x_double_bar, '#28a745', [8, 4], 2),
+            ucl: hLine('UCL',    data.ucl_xbar,     '#dc3545', [5, 5], 1.5),
+            lcl: hLine('LCL',    data.lcl_xbar,     '#dc3545', [5, 5], 1.5),
+        };
+        if (data.tol_max !== null && data.tol_max !== undefined) {
+            lines.usl = hLine('USL (Spec)', data.tol_max, '#fd7e14', [2, 4], 1);
+        }
+        if (data.tol_min !== null && data.tol_min !== undefined) {
+            lines.lsl = hLine('LSL (Spec)', data.tol_min, '#fd7e14', [2, 4], 1);
+        }
+        return lines;
+    }
+
+    function hLine(label, y, color, dash, width) {
+        return {
+            type: 'line', yMin: y, yMax: y,
+            borderColor: color, borderDash: dash, borderWidth: width,
+            label: {
+                display: true, content: `${label}: ${Number(y).toFixed(2)}`,
+                position: 'end', backgroundColor: 'transparent',
+                color: color, font: { size: 10, weight: '600', family: 'Inter' },
+                padding: 2, yAdjust: -8
+            }
+        };
+    }
+
     function renderXbarChart(data) {
         const ctx = document.getElementById('xbarChart').getContext('2d');
-
         if (xbarChart) xbarChart.destroy();
 
-        const datasets = [
-            {
-                label: 'X̄ (Subgroup Mean)',
-                data: data.means,
-                borderColor: '#0056b3',
-                backgroundColor: 'rgba(0, 86, 179, 0.1)',
-                borderWidth: 2.5,
-                pointRadius: 5,
-                pointBackgroundColor: data.means.map(m =>
-                    (m < data.lcl_xbar || m > data.ucl_xbar) ? '#dc3545' :
-                    (m < data.tol_min || m > data.tol_max) ? '#fd7e14' : '#0056b3'
-                ),
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                tension: 0.2,
-                fill: false
-            },
-            {
-                label: 'CL (X̿)',
-                data: Array(data.batches.length).fill(data.x_double_bar),
-                borderColor: '#28a745',
-                borderWidth: 2,
-                borderDash: [8, 4],
-                pointRadius: 0,
-                fill: false
-            },
-            {
-                label: 'UCL',
-                data: Array(data.batches.length).fill(data.ucl_xbar),
-                borderColor: '#dc3545',
-                borderWidth: 1.5,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                fill: false
-            },
-            {
-                label: 'LCL',
-                data: Array(data.batches.length).fill(data.lcl_xbar),
-                borderColor: '#dc3545',
-                borderWidth: 1.5,
-                borderDash: [5, 5],
-                pointRadius: 0,
-                fill: false
-            }
-        ];
+        // Use flat individual values as primary series (x = sample #, y = value)
+        const flatVals = data.flat_values || [];
+        if (flatVals.length === 0) return;
+        const labels = flatVals.map((_, i) => `#${i + 1}`);
 
-        // Add spec limits if available
-        if (data.tol_max !== null) {
-            datasets.push({
-                label: 'USL (Spec)',
-                data: Array(data.batches.length).fill(data.tol_max),
-                borderColor: '#fd7e14',
-                borderWidth: 1,
-                borderDash: [2, 4],
-                pointRadius: 0,
-                fill: false
-            });
-        }
-        if (data.tol_min !== null) {
-            datasets.push({
-                label: 'LSL (Spec)',
-                data: Array(data.batches.length).fill(data.tol_min),
-                borderColor: '#fd7e14',
-                borderWidth: 1,
-                borderDash: [2, 4],
-                pointRadius: 0,
-                fill: false
-            });
-        }
+        // Colour each point: red = outside control limits, orange = outside spec, blue = ok
+        const pointColors = flatVals.map(v => {
+            if ((data.tol_min != null && v < data.tol_min) || (data.tol_max != null && v > data.tol_max))
+                return '#fd7e14';
+            if (v < data.lcl_xbar || v > data.ucl_xbar)
+                return '#dc3545';
+            return '#0056b3';
+        });
+
+        // Build horizontal reference line annotations
+        const annotations = buildHorizontalLineAnnotations(data);
+
+        // Add vertical batch-boundary lines when there are multiple batches
+        const boundaries = data.batch_boundaries || [];
+        boundaries.slice(1).forEach((b, i) => {
+            annotations[`vline_${i}`] = {
+                type: 'line',
+                xMin: b.sample_index - 0.5,
+                xMax: b.sample_index - 0.5,
+                borderColor: 'rgba(0,0,0,0.18)',
+                borderWidth: 1.5,
+                borderDash: [4, 4],
+                label: {
+                    display: true,
+                    content: b.label,
+                    position: 'start',
+                    backgroundColor: 'rgba(255,255,255,0.9)',
+                    color: '#555',
+                    font: { size: 9, family: 'Inter' },
+                    padding: { x: 4, y: 2 },
+                    yAdjust: -14
+                }
+            };
+        });
 
         xbarChart = new Chart(ctx, {
             type: 'line',
-            data: { labels: data.batches, datasets },
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Sample Value',
+                    data: flatVals,
+                    borderColor: '#0056b3',
+                    backgroundColor: 'rgba(0,86,179,0.08)',
+                    borderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7,
+                    pointBackgroundColor: pointColors,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 1.5,
+                    tension: 0.1,
+                    fill: false,
+                }]
+            },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
@@ -459,15 +489,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         titleFont: { family: 'Inter' },
                         bodyFont: { family: 'Inter' },
                         padding: 12,
-                        cornerRadius: 8
-                    }
+                        cornerRadius: 8,
+                        callbacks: {
+                            title: (items) => `Sample ${items[0].label}`,
+                            label: (item) => `Value: ${item.parsed.y}`
+                        }
+                    },
+                    annotation: { annotations }
                 },
                 scales: {
                     x: {
+                        title: { display: true, text: 'Sample Number', font: { size: 11, family: 'Inter' } },
                         grid: { color: 'rgba(0,0,0,0.04)' },
-                        ticks: { font: { family: 'Inter', size: 11 } }
+                        ticks: {
+                            font: { family: 'Inter', size: 10 },
+                            maxTicksLimit: 20,
+                            maxRotation: 0
+                        }
                     },
                     y: {
+                        title: { display: true, text: 'Measured Value', font: { size: 11, family: 'Inter' } },
                         grid: { color: 'rgba(0,0,0,0.06)' },
                         ticks: { font: { family: 'Inter', size: 11 } }
                     }
@@ -481,6 +522,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (rChart) rChart.destroy();
 
+        const annotations = {
+            rbar: hLine('R̄',       data.r_bar,   '#28a745', [8, 4], 2),
+            uclr: hLine('UCL (R)', data.ucl_r,  '#dc3545', [5, 5], 1.5),
+            lclr: hLine('LCL (R)', data.lcl_r,  '#dc3545', [5, 5], 1.5),
+        };
+
         rChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -492,40 +539,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         borderColor: '#6f42c1',
                         backgroundColor: 'rgba(111, 66, 193, 0.1)',
                         borderWidth: 2.5,
-                        pointRadius: 5,
+                        pointRadius: 6,
                         pointBackgroundColor: data.ranges.map(r =>
                             (r > data.ucl_r) ? '#dc3545' : '#6f42c1'
                         ),
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2,
                         tension: 0.2,
-                        fill: false
-                    },
-                    {
-                        label: 'R̄',
-                        data: Array(data.batches.length).fill(data.r_bar),
-                        borderColor: '#28a745',
-                        borderWidth: 2,
-                        borderDash: [8, 4],
-                        pointRadius: 0,
-                        fill: false
-                    },
-                    {
-                        label: 'UCL (R)',
-                        data: Array(data.batches.length).fill(data.ucl_r),
-                        borderColor: '#dc3545',
-                        borderWidth: 1.5,
-                        borderDash: [5, 5],
-                        pointRadius: 0,
-                        fill: false
-                    },
-                    {
-                        label: 'LCL (R)',
-                        data: Array(data.batches.length).fill(data.lcl_r),
-                        borderColor: '#dc3545',
-                        borderWidth: 1.5,
-                        borderDash: [5, 5],
-                        pointRadius: 0,
                         fill: false
                     }
                 ]
@@ -542,7 +562,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         bodyFont: { family: 'Inter' },
                         padding: 12,
                         cornerRadius: 8
-                    }
+                    },
+                    annotation: { annotations }
                 },
                 scales: {
                     x: {
@@ -561,25 +582,154 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderInterpretation(data, checkpoint) {
         const el = document.getElementById('spcInterpretation');
-        const oocMeans = data.means.filter(m => m < data.lcl_xbar || m > data.ucl_xbar);
-        const oocRanges = data.ranges.filter(r => r > data.ucl_r);
+        const flatVals = data.flat_values || [];
+        const oocSamples = flatVals.filter(v => v < data.lcl_xbar || v > data.ucl_xbar);
+        const oocSpec    = flatVals.filter(v =>
+            (data.tol_min != null && v < data.tol_min) ||
+            (data.tol_max != null && v > data.tol_max)
+        );
+        const oocRanges  = data.ranges.filter(r => r > data.ucl_r);
 
         let status = '🟢';
-        let msg = `The <strong>${checkpoint}</strong> process appears <strong>stable and in control</strong>. All data points fall within control limits.`;
+        let msg = `The <strong>${checkpoint}</strong> process appears <strong>stable and in control</strong>. All ${flatVals.length} individual samples fall within control limits.`;
 
-        if (oocMeans.length > 0 || oocRanges.length > 0) {
+        if (oocSpec.length > 0) {
             status = '🔴';
-            msg = `<strong>Attention:</strong> ${oocMeans.length} mean value(s) and ${oocRanges.length} range value(s) fall outside control limits for <strong>${checkpoint}</strong>. Investigate for assignable causes.`;
+            msg = `<strong>Out of Spec:</strong> ${oocSpec.length} sample(s) out of ${flatVals.length} are outside specification limits for <strong>${checkpoint}</strong>. Batch review required.`;
+        } else if (oocSamples.length > 0 || oocRanges.length > 0) {
+            status = '🟡';
+            msg = `<strong>Process Warning:</strong> ${oocSamples.length} sample(s) exceed control limits and ${oocRanges.length} range(s) are out of control for <strong>${checkpoint}</strong>. Investigate for assignable causes.`;
         }
 
         el.innerHTML = `
             <strong>${status} Process Interpretation</strong>
             <p style="margin-top: 8px; font-size: 0.88rem; color: #555; line-height: 1.6;">${msg}</p>
             <div style="margin-top: 12px; font-size: 0.8rem; color: #888;">
-                Sample size: n=${data.sample_count} | Batches analyzed: ${data.batches.length} |
-                Spec range: ${data.tol_min} – ${data.tol_max}
+                Total samples: ${flatVals.length} across ${data.batches.length} batch(es) |
+                n per batch: ${data.sample_count} |
+                Spec: ${data.tol_min ?? '—'} – ${data.tol_max ?? '—'} |
+                Control limits: LCL=${data.lcl_xbar} / CL=${data.x_double_bar} / UCL=${data.ucl_xbar}
             </div>
         `;
+    }
+
+    // ── P-CHART (attribute data: PASS/FAIL checkpoints) ────────────────
+    function renderPChartKPIs(data) {
+        document.getElementById('spcKpis').innerHTML = `
+            <div class="kpi-card blue">
+                <div class="kpi-value">${data.batches.length}</div>
+                <div class="kpi-label">Batches Tested</div>
+            </div>
+            <div class="kpi-card green">
+                <div class="kpi-value">${(data.p_bar * 100).toFixed(2)}%</div>
+                <div class="kpi-label">p̄ (Avg Fail Rate)</div>
+            </div>
+            <div class="kpi-card red">
+                <div class="kpi-value">${(data.ucl_p * 100).toFixed(2)}%</div>
+                <div class="kpi-label">UCL (p)</div>
+            </div>
+            <div class="kpi-card" style="border-left: 4px solid #6f42c1;">
+                <div class="kpi-value" style="color: #6f42c1;">${(data.lcl_p * 100).toFixed(2)}%</div>
+                <div class="kpi-label">LCL (p)</div>
+            </div>
+            <div class="kpi-card orange">
+                <div class="kpi-value">${data.total_fails} / ${data.total_samples}</div>
+                <div class="kpi-label">Total Fails / Samples</div>
+            </div>
+        `;
+    }
+
+    function renderPChart(data) {
+        // Rename the X-bar chart header to reflect attribute mode
+        const xbarCard = document.querySelector('#spcChartsArea .chart-card:nth-of-type(1) h3');
+        if (xbarCard) xbarCard.textContent = 'p-Chart (Proportion Defective)';
+
+        const ctx = document.getElementById('xbarChart').getContext('2d');
+        if (xbarChart) xbarChart.destroy();
+
+        const failPercents = data.fail_rates.map(r => r * 100);
+
+        const annotations = {
+            pbar: hLine('p̄',      data.p_bar * 100, '#28a745', [8, 4], 2),
+            uclp: hLine('UCL (p)', data.ucl_p * 100, '#dc3545', [5, 5], 1.5),
+            lclp: hLine('LCL (p)', data.lcl_p * 100, '#dc3545', [5, 5], 1.5),
+        };
+
+        xbarChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.batches,
+                datasets: [{
+                    label: 'Fail Rate (%)',
+                    data: failPercents,
+                    backgroundColor: failPercents.map(p =>
+                        (p > data.ucl_p * 100) ? 'rgba(220,53,69,0.75)' : 'rgba(0,86,179,0.65)'
+                    ),
+                    borderColor: '#0056b3',
+                    borderWidth: 1,
+                    maxBarThickness: 60
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const i = ctx.dataIndex;
+                                return `Fails: ${data.fail_counts[i]} / ${data.sample_sizes[i]} (${failPercents[i].toFixed(2)}%)`;
+                            }
+                        },
+                        backgroundColor: 'rgba(0,0,0,0.8)', padding: 12, cornerRadius: 8
+                    },
+                    annotation: { annotations }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 } } },
+                    y: {
+                        beginAtZero: true,
+                        max: Math.max(data.ucl_p * 100 * 1.2, Math.max(...failPercents) * 1.2, 5),
+                        grid: { color: 'rgba(0,0,0,0.06)' },
+                        ticks: {
+                            callback: v => v + '%',
+                            font: { size: 11 }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderAttributeInterpretation(data, checkpoint) {
+        const el = document.getElementById('spcInterpretation');
+        const ooc = data.fail_rates.filter(r => r > data.ucl_p).length;
+        let status = '🟢', msg;
+        if (data.total_fails === 0) {
+            msg = `<strong>${checkpoint}</strong>: all ${data.total_samples} samples across ${data.batches.length} batch(es) passed. Process in control.`;
+        } else if (ooc > 0) {
+            status = '🔴';
+            msg = `<strong>Attention:</strong> ${ooc} batch(es) exceed the UCL for fail rate. Investigate assignable causes for <strong>${checkpoint}</strong>.`;
+        } else {
+            status = '🟡';
+            msg = `Process fail rate for <strong>${checkpoint}</strong> averages ${(data.p_bar*100).toFixed(2)}% — within control limits but monitor trends.`;
+        }
+        el.innerHTML = `
+            <strong>${status} p-Chart Interpretation</strong>
+            <p style="margin-top: 8px; font-size: 0.88rem; color: #555; line-height: 1.6;">${msg}</p>
+            <div style="margin-top: 12px; font-size: 0.8rem; color: #888;">
+                Total: ${data.total_fails} failures / ${data.total_samples} samples across ${data.batches.length} batch(es) |
+                Control limits: LCL=${(data.lcl_p*100).toFixed(2)}%, CL=${(data.p_bar*100).toFixed(2)}%, UCL=${(data.ucl_p*100).toFixed(2)}%
+            </div>
+        `;
+    }
+
+    // Reset X-bar header when switching back to variable mode
+    const _origRenderKPIs = null;
+    function resetXbarHeader() {
+        const xbarHeader = document.querySelector('#spcChartsArea .chart-card:nth-of-type(1) h3');
+        if (xbarHeader) xbarHeader.textContent = 'X̄ (Mean) Control Chart';
     }
 
     // ── RENDERING FUNCTIONS (Batch Mode) ──
@@ -612,22 +762,49 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         data.tests.forEach(test => {
-            const valStr = test.individual_values.map(v => v.toFixed(2)).join(', ');
-            const tolStr = (test.tol_min !== null ? test.tol_min : '—') + ' – ' + (test.tol_max !== null ? test.tol_max : '—') + ' ' + (test.unit || '');
-            const statusClass = test.status === 'PASS' ? 'batch-pass' : 'batch-fail';
+            const rt = test.result_type || 'text';
             const statusIcon = test.status === 'PASS' ? '✅' : '❌';
+            const statusTag = `<span class="tag ${test.status === 'PASS' ? 'qc-status-pass' : 'qc-status-fail'}">${statusIcon} ${test.status || '—'}</span>`;
+
+            let valCell = '—';
+            let meanCell = '—';
+            let rangeCell = '—';
+            let tolCell = '—';
+
+            if (rt === 'numeric') {
+                valCell = (test.individual_values || [])
+                    .map(v => typeof v === 'number' ? v.toFixed(2) : v)
+                    .join(', ') || '—';
+                meanCell = test.mean != null ? `<strong>${Number(test.mean).toFixed(2)}</strong>` : '—';
+                rangeCell = test.range_val != null ? Number(test.range_val).toFixed(2) : '—';
+                const lo = test.tol_min != null ? test.tol_min : '—';
+                const hi = test.tol_max != null ? test.tol_max : '—';
+                tolCell = `${lo} – ${hi}${test.unit ? ' ' + test.unit : ''}`;
+                if (test.tolerance && lo === '—' && hi === '—') tolCell = test.tolerance;
+
+            } else if (rt === 'passfail') {
+                valCell = (test.individual_values || []).map(v => {
+                    const up = String(v).toUpperCase();
+                    const ok = up === 'PASS' || up === 'YES' || up === 'P';
+                    return `<span class="tag ${ok ? 'qc-status-pass' : 'qc-status-fail'}" style="font-size:0.7rem;padding:1px 6px;">${v}</span>`;
+                }).join(' ') || statusTag;
+
+            } else {
+                // text observations
+                valCell = `<em style="color:#555;">${(test.individual_values || []).join('; ') || test.status || '—'}</em>`;
+            }
 
             const tr = document.createElement('tr');
-            tr.className = statusClass;
+            tr.className = test.status === 'PASS' ? 'batch-pass' : 'batch-fail';
             tr.innerHTML = `
                 <td><strong>${test.checkpoint}</strong></td>
-                <td>${test.sample_size || test.sample_count}</td>
-                <td class="batch-values-cell">${valStr}</td>
-                <td><strong>${test.mean.toFixed(2)}</strong></td>
-                <td>${test.range_val.toFixed(2)}</td>
-                <td>${tolStr}</td>
-                <td><span class="tag ${test.status === 'PASS' ? 'qc-status-pass' : 'qc-status-fail'}">${statusIcon} ${test.status}</span></td>
-                <td>${test.tested_by}</td>
+                <td>${test.sample_size || test.sample_count || '—'}</td>
+                <td class="batch-values-cell">${valCell}</td>
+                <td>${meanCell}</td>
+                <td>${rangeCell}</td>
+                <td>${tolCell}</td>
+                <td>${statusTag}</td>
+                <td>${test.tested_by || '—'}</td>
             `;
             tbody.appendChild(tr);
         });

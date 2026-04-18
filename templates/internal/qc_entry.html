@@ -993,7 +993,7 @@ function renderStageCheckpoints(checkpoints) {
                     <input type="number" step="any" class="form-control s-input"
                            data-cidx="${idx}" data-i="${i}"
                            style="width:82px;padding:4px 6px;"
-                           placeholder="${i+1}"
+                           placeholder="—"
                            oninput="recalcStage(${idx})">
                 </div>`;
             }
@@ -1059,12 +1059,25 @@ function recalcStage(cidx) {
 
     const mean  = nums.reduce((a, b) => a + b, 0) / nums.length;
     const range = nums.length > 1 ? Math.max(...nums) - Math.min(...nums) : 0;
-    const pass  = (c.tol_min == null || mean >= c.tol_min) &&
-                  (c.tol_max == null || mean <= c.tol_max);
+
+    // Evaluate each bound independently so one-sided specs still validate.
+    const hasSpec = (c.tol_min != null) || (c.tol_max != null);
+    const passLo  = (c.tol_min == null) || (mean >= c.tol_min);
+    const passHi  = (c.tol_max == null) || (mean <= c.tol_max);
+    const pass    = !hasSpec || (passLo && passHi);
+
     const complete = nums.length >= (c.sample_count || 1);
-    const color    = !complete ? '#856404' : (pass ? '#155724' : '#721c24');
-    const label    = !complete ? `${nums.length} / ${c.sample_count} samples` :
-                                 (pass ? '✓ PASS' : '✗ FAIL');
+    let color, label;
+    if (!complete) {
+        color = '#856404';
+        label = `${nums.length} / ${c.sample_count} samples`;
+    } else if (!hasSpec) {
+        color = '#555';
+        label = 'ℹ Recorded (no numeric spec)';
+    } else {
+        color = pass ? '#155724' : '#721c24';
+        label = pass ? '✓ PASS' : '✗ FAIL';
+    }
 
     el.innerHTML = `<span style="color:${color};font-weight:600;">${label}</span>
         &nbsp;|&nbsp; Mean: <strong>${mean.toFixed(3)}</strong>

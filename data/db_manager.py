@@ -272,9 +272,150 @@ def _migrate_add_columns(conn):
     _add_column_if_missing(conn, 'capa_logs', 'stage_id', 'INTEGER')
     _add_column_if_missing(conn, 'capa_logs', 'source_type', "TEXT DEFAULT 'complaint'")
     _add_column_if_missing(conn, 'stage_checkpoints', 'result_type', "TEXT DEFAULT 'numeric'")
+    _add_column_if_missing(conn, 'stage_checkpoints', 'source', "TEXT DEFAULT 'Excel'")
+    _add_column_if_missing(conn, 'stage_checkpoints', 'is_active', 'INTEGER DEFAULT 1')
+    _add_column_if_missing(conn, 'stage_checkpoints', 'updated_at', 'TIMESTAMP')
+    _add_column_if_missing(conn, 'stage_checkpoints', 'updated_by', 'TEXT')
     _add_column_if_missing(conn, 'batch_records', 'sample_number', 'INTEGER DEFAULT 1')
+
+    # Audit log for checkpoint library edits (GMP traceability)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stage_checkpoints_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checkpoint_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            field_changed TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            changed_by TEXT NOT NULL,
+            reason TEXT DEFAULT '',
+            changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (checkpoint_id) REFERENCES stage_checkpoints(id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sc_audit_cp ON stage_checkpoints_audit(checkpoint_id)")
+
     _relax_batch_records_constraints(conn)
+    _backfill_tolerance_bounds(conn)
     conn.commit()
+
+
+# ─── Tolerance Parsing ─────────────────────────────────────────────────────
+import re as _re
+
+def parse_tolerance(tol_text):
+    """Parse a tolerance text string into (tol_min, tol_max) float bounds.
+
+    Returns (None, None) when it cannot extract numeric bounds.
+
+    Examples:
+        "98.0 - 101.5 %"          -> (98.0, 101.5)
+        "<= 0.5 %"                 -> (None, 0.5)
+        ">= 80 %"                  -> (80.0, None)
+        "600 mg +/- 5 %"           -> (570.0, 630.0)
+        "14.0 mm +/- 5 %"          -> (13.3, 14.7)
+        "250 um +/- 10 um"         -> (240.0, 260.0)
+        "Target weight gain: 2 - 4 % of core weight" -> (2.0, 4.0)
+        "Per approved spec"        -> (None, None)
+        "Hausner ratio <= 1.25 (good flow)" -> (None, 1.25)
+    """
+    if not tol_text:
+        return (None, None)
+    t = str(tol_text).strip()
+    if not _re.search(r'\d', t):
+        return (None, None)
+
+    # 1) "+/-" or "±" pattern  (center +/- delta [%])
+    m = _re.search(r'([\d.]+)\s*[A-Za-z/²]*\s*(?:\+/-|±)\s*([\d.]+)\s*(%)?', t)
+    if m:
+        try:
+            center = float(m.group(1))
+            delta = float(m.group(2))
+            is_pct = m.group(3) == '%'
+            if is_pct:
+                lo = round(center * (1 - delta / 100.0), 4)
+                hi = round(center * (1 + delta / 100.0), 4)
+            else:
+                lo = round(center - delta, 4)
+                hi = round(center + delta, 4)
+            return (lo, hi)
+        except ValueError:
+            pass
+
+    # 2a) "+X.Y to +A.B" signed range (for rotation etc.)
+    m = _re.search(r'([+-]?[\d.]+)\s+to\s+([+-]?[\d.]+)', t, _re.IGNORECASE)
+    if m:
+        try:
+            lo = float(m.group(1))
+            hi = float(m.group(2))
+            if lo <= hi:
+                return (lo, hi)
+        except ValueError:
+            pass
+
+    # 2b) "X - Y" range pattern (X <= Y)
+    for rm in _re.finditer(r'(?<![\d.])([\d.]+)\s*[-–]\s*([\d.]+)(?![\d.])', t):
+        try:
+            lo = float(rm.group(1))
+            hi = float(rm.group(2))
+            if lo <= hi:
+                return (lo, hi)
+        except ValueError:
+            continue
+
+    # 3) "<= X" or "< X"  upper bound only
+    m = _re.search(r'<=?\s*([\d.]+)', t)
+    if m:
+        try:
+            return (None, float(m.group(1)))
+        except ValueError:
+            pass
+
+    # 4) ">= X" or "> X"  lower bound only
+    m = _re.search(r'>=?\s*([\d.]+)', t)
+    if m:
+        try:
+            return (float(m.group(1)), None)
+        except ValueError:
+            pass
+
+    return (None, None)
+
+
+def _backfill_tolerance_bounds(conn):
+    """Parse tolerance text for stage_checkpoints & qc_checklists where
+    tol_min / tol_max are NULL. Idempotent — safe to run every startup."""
+    # stage_checkpoints (numeric result_type only)
+    rows = conn.execute(
+        "SELECT id, tolerance FROM stage_checkpoints "
+        "WHERE (tol_min IS NULL AND tol_max IS NULL) "
+        "AND COALESCE(result_type,'numeric') = 'numeric' "
+        "AND tolerance IS NOT NULL AND tolerance != ''"
+    ).fetchall()
+    for r in rows:
+        lo, hi = parse_tolerance(r['tolerance'])
+        if lo is not None or hi is not None:
+            conn.execute(
+                "UPDATE stage_checkpoints SET tol_min = ?, tol_max = ? WHERE id = ?",
+                (lo, hi, r['id'])
+            )
+
+    # qc_checklists (legacy)
+    try:
+        rows = conn.execute(
+            "SELECT id, tolerance FROM qc_checklists "
+            "WHERE tol_min IS NULL AND tol_max IS NULL "
+            "AND tolerance IS NOT NULL AND tolerance != ''"
+        ).fetchall()
+        for r in rows:
+            lo, hi = parse_tolerance(r['tolerance'])
+            if lo is not None or hi is not None:
+                conn.execute(
+                    "UPDATE qc_checklists SET tol_min = ?, tol_max = ? WHERE id = ?",
+                    (lo, hi, r['id'])
+                )
+    except sqlite3.OperationalError:
+        pass  # qc_checklists may not have tol_min/tol_max on very old DBs
 
 
 def _relax_batch_records_constraints(conn):
@@ -846,7 +987,8 @@ def get_batch_records_for_spc(product_name, checkpoint, stage_id=None):
 
     if product:
         rows = conn.execute(
-            f"""SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max, tested_at
+            f"""SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max,
+                       individual_values, status, tested_at
                FROM batch_records
                WHERE product_id = ? AND checkpoint = ? {stage_clause}
                ORDER BY tested_at ASC""",
@@ -855,7 +997,8 @@ def get_batch_records_for_spc(product_name, checkpoint, stage_id=None):
     else:
         # Fallback to text matching
         rows = conn.execute(
-            f"""SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max, tested_at
+            f"""SELECT batch_number, mean, range_val, sample_count, tol_min, tol_max,
+                       individual_values, status, tested_at
                FROM batch_records
                WHERE product_name = ? AND checkpoint = ? {stage_clause}
                ORDER BY tested_at ASC""",
@@ -867,25 +1010,44 @@ def get_batch_records_for_spc(product_name, checkpoint, stage_id=None):
 
 
 def get_distinct_batches(product_name):
-    """Return distinct batch numbers for a given product from batch_records."""
+    """Return distinct batch numbers for a given product.
+
+    Prefers production batches from the `batches` table (current GMP pipeline)
+    and then appends any legacy batch_records batches that aren't already
+    listed, ordered most-recent-first.
+    """
     conn = get_connection()
     product = conn.execute(
         "SELECT id FROM products WHERE product_name = ?", (product_name,)
     ).fetchone()
 
-    if product:
-        rows = conn.execute(
-            "SELECT DISTINCT batch_number FROM batch_records WHERE product_id = ? ORDER BY tested_at DESC",
-            (product["id"],)
-        ).fetchall()
-    else:
+    if not product:
         rows = conn.execute(
             "SELECT DISTINCT batch_number FROM batch_records WHERE product_name = ? ORDER BY tested_at DESC",
             (product_name,)
         ).fetchall()
+        conn.close()
+        return [row['batch_number'] for row in rows]
+
+    # 1) Current production batches
+    gmp_rows = conn.execute(
+        "SELECT batch_number FROM batches WHERE product_id = ? ORDER BY created_at DESC",
+        (product["id"],)
+    ).fetchall()
+    gmp_batches = [r['batch_number'] for r in gmp_rows]
+    seen = set(gmp_batches)
+
+    # 2) Legacy batches with recorded QC data that aren't already in the batches table
+    legacy_rows = conn.execute(
+        "SELECT DISTINCT batch_number, MAX(tested_at) as last_test "
+        "FROM batch_records WHERE product_id = ? GROUP BY batch_number "
+        "ORDER BY last_test DESC",
+        (product["id"],)
+    ).fetchall()
+    legacy_batches = [r['batch_number'] for r in legacy_rows if r['batch_number'] not in seen]
 
     conn.close()
-    return [row['batch_number'] for row in rows]
+    return gmp_batches + legacy_batches
 
 
 def get_distinct_checkpoints(product_name=None, stage_id=None):
@@ -1500,5 +1662,198 @@ def get_all_capa_logs_extended():
         LEFT JOIN production_stages ps ON c.stage_id = ps.id
         ORDER BY c.resolved_at DESC
     """).fetchall()
+    conn.close()
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Stage Checkpoint Library (Master Spec Library)
+# ---------------------------------------------------------------------------
+
+# Fields that operators are allowed to edit on a checkpoint row
+EDITABLE_CHECKPOINT_FIELDS = {
+    'sample_size', 'sample_count', 'instruction',
+    'tolerance', 'unit', 'tol_min', 'tol_max',
+    'frequency', 'defect_type', 'test_type', 'result_type',
+}
+
+
+def get_stage_library():
+    """Return all stages and their active checkpoints, grouped by layer.
+
+    Structure:
+      [
+        {
+          'layer': 'IQC',
+          'stages': [
+             {'id':.., 'stage_code':..., 'stage_name':..., 'product_form':...,
+              'sequence_order':..., 'checkpoints': [ {...}, ... ]}
+          ]
+        },
+        ...
+      ]
+    """
+    conn = get_connection()
+    stages = conn.execute("""
+        SELECT * FROM production_stages
+        ORDER BY
+          CASE layer WHEN 'IQC' THEN 1 WHEN 'IPQC' THEN 2 WHEN 'FQC' THEN 3 ELSE 4 END,
+          sequence_order
+    """).fetchall()
+
+    checkpoints = conn.execute("""
+        SELECT * FROM stage_checkpoints
+        WHERE COALESCE(is_active, 1) = 1
+        ORDER BY stage_id, id
+    """).fetchall()
+    conn.close()
+
+    by_stage = {}
+    for cp in checkpoints:
+        by_stage.setdefault(cp['stage_id'], []).append(dict(cp))
+
+    result = {}
+    for s in stages:
+        layer = s['layer']
+        if layer not in result:
+            result[layer] = []
+        result[layer].append({
+            **dict(s),
+            'checkpoints': by_stage.get(s['id'], []),
+        })
+
+    # Return as ordered list
+    ordered_layers = ['IQC', 'IPQC', 'FQC']
+    return [{'layer': l, 'stages': result.get(l, [])} for l in ordered_layers if l in result]
+
+
+def update_stage_checkpoint_field(checkpoint_id, field, new_value, user, reason=''):
+    """Update a single editable field and write an audit entry.
+
+    Returns (True, None) on success, (False, error_message) otherwise.
+    """
+    if field not in EDITABLE_CHECKPOINT_FIELDS:
+        return False, f"Field '{field}' is not editable."
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT {field} FROM stage_checkpoints WHERE id = ?", (checkpoint_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return False, "Checkpoint not found."
+
+        old_value = row[field]
+
+        # Coerce numeric fields
+        coerced = new_value
+        if field in ('sample_count',):
+            coerced = int(new_value) if str(new_value).strip() else 1
+        elif field in ('tol_min', 'tol_max'):
+            s = str(new_value).strip()
+            coerced = float(s) if s not in ('', 'None', 'null') else None
+
+        conn.execute(
+            f"UPDATE stage_checkpoints SET {field} = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?",
+            (coerced, user, checkpoint_id)
+        )
+
+        # Auto-reparse tolerance text -> numeric bounds when tolerance itself is edited
+        if field == 'tolerance':
+            lo, hi = parse_tolerance(coerced)
+            conn.execute(
+                "UPDATE stage_checkpoints SET tol_min = ?, tol_max = ? WHERE id = ?",
+                (lo, hi, checkpoint_id)
+            )
+
+        conn.execute(
+            """INSERT INTO stage_checkpoints_audit
+               (checkpoint_id, action, field_changed, old_value, new_value, changed_by, reason)
+               VALUES (?, 'EDIT', ?, ?, ?, ?, ?)""",
+            (checkpoint_id, field, str(old_value) if old_value is not None else '',
+             str(coerced) if coerced is not None else '', user, reason)
+        )
+        conn.commit()
+        conn.close()
+        return True, None
+    except Exception as e:
+        conn.close()
+        return False, str(e)
+
+
+def insert_custom_stage_checkpoint(stage_id, data, user):
+    """Create a user-added checkpoint under an existing stage. Returns new id."""
+    conn = get_connection()
+    tol_min, tol_max = parse_tolerance(data.get('tolerance', ''))
+    cur = conn.execute(
+        """INSERT INTO stage_checkpoints
+           (stage_id, section, checkpoint_no, checkpoint_name, sample_size, sample_count,
+            instruction, tolerance, unit, tol_min, tol_max, frequency, defect_type,
+            test_type, result_type, source, is_active, updated_at, updated_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Custom', 1, CURRENT_TIMESTAMP, ?)""",
+        (
+            stage_id,
+            data.get('section', ''),
+            data.get('checkpoint_no', ''),
+            data['checkpoint_name'],
+            data.get('sample_size', ''),
+            int(data.get('sample_count') or 1),
+            data.get('instruction', ''),
+            data.get('tolerance', ''),
+            data.get('unit', ''),
+            tol_min, tol_max,
+            data.get('frequency', ''),
+            data.get('defect_type', ''),
+            data.get('test_type', 'variable'),
+            data.get('result_type', 'numeric'),
+            user,
+        )
+    )
+    new_id = cur.lastrowid
+    conn.execute(
+        """INSERT INTO stage_checkpoints_audit
+           (checkpoint_id, action, field_changed, old_value, new_value, changed_by, reason)
+           VALUES (?, 'ADD', NULL, NULL, ?, ?, ?)""",
+        (new_id, data['checkpoint_name'], user, data.get('reason', 'Custom addition'))
+    )
+    conn.commit()
+    conn.close()
+    return new_id
+
+
+def deactivate_stage_checkpoint(checkpoint_id, user, reason=''):
+    """Soft-delete a checkpoint (custom or inherited).  Returns (ok, msg)."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT checkpoint_name, source FROM stage_checkpoints WHERE id = ?", (checkpoint_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False, "Checkpoint not found."
+    conn.execute(
+        "UPDATE stage_checkpoints SET is_active = 0, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE id = ?",
+        (user, checkpoint_id)
+    )
+    conn.execute(
+        """INSERT INTO stage_checkpoints_audit
+           (checkpoint_id, action, field_changed, old_value, new_value, changed_by, reason)
+           VALUES (?, 'DEACTIVATE', NULL, ?, 'inactive', ?, ?)""",
+        (checkpoint_id, row['checkpoint_name'], user, reason)
+    )
+    conn.commit()
+    conn.close()
+    return True, None
+
+
+def get_checkpoint_audit_log(checkpoint_id):
+    """Return the full audit history for a checkpoint, newest first."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT * FROM stage_checkpoints_audit
+           WHERE checkpoint_id = ?
+           ORDER BY changed_at DESC""",
+        (checkpoint_id,)
+    ).fetchall()
     conn.close()
     return rows

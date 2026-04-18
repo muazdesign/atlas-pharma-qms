@@ -65,7 +65,15 @@
             {% endif %}
         </div>
         <div class="pm-card-actions">
-            <button class="btn btn-sm btn-outline" onclick="openEditModal({{ product.id }}, '{{ product.product_name | e }}', '{{ product.form or '' | e }}', '{{ product.description or '' | e }}', '{{ product.category or '' | e }}', '{{ product.buy_link or '' | e }}', '{{ product.dosage_form or '' | e }}', '{{ product.image_url or '' | e }}')">
+            <button class="btn btn-sm btn-outline js-edit-btn"
+                    data-id="{{ product.id }}"
+                    data-name="{{ product.product_name or '' }}"
+                    data-form="{{ product.form or '' }}"
+                    data-desc="{{ product.description or '' }}"
+                    data-category="{{ product.category or '' }}"
+                    data-buy-link="{{ product.buy_link or '' }}"
+                    data-dosage-form="{{ product.dosage_form or '' }}"
+                    data-image-url="{{ product.image_url or '' }}">
                 ✏️ Edit
             </button>
             <form method="POST" action="/portal/products/upload-image/{{ product.id }}" enctype="multipart/form-data" class="pm-upload-form" style="display: inline;">
@@ -216,15 +224,15 @@ function toggleEditModal(show) {
 
 function openEditModal(id, name, form, desc, category, buyLink, dosageForm, imageUrl) {
     document.getElementById('editProductForm').action = `/portal/products/edit/${id}`;
-    document.getElementById('editName').value = name;
-    document.getElementById('editDesc').value = desc;
-    document.getElementById('editCategory').value = category;
-    document.getElementById('editBuyLink').value = buyLink;
+    document.getElementById('editName').value = name || '';
+    document.getElementById('editDesc').value = desc || '';
+    document.getElementById('editCategory').value = category || '';
+    document.getElementById('editBuyLink').value = buyLink || '';
 
     // Set form dropdown
     const formSelect = document.getElementById('editForm');
     for (let opt of formSelect.options) {
-        opt.selected = (opt.value === form);
+        opt.selected = (opt.value === (form || ''));
     }
 
     // Image preview
@@ -238,6 +246,22 @@ function openEditModal(id, name, form, desc, category, buyLink, dosageForm, imag
 
     toggleEditModal(true);
 }
+
+// Wire up edit buttons via data attributes (handles apostrophes/quotes safely)
+document.querySelectorAll('.js-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        openEditModal(
+            btn.dataset.id,
+            btn.dataset.name,
+            btn.dataset.form,
+            btn.dataset.desc,
+            btn.dataset.category,
+            btn.dataset.buyLink,
+            btn.dataset.dosageForm,
+            btn.dataset.imageUrl
+        );
+    });
+});
 
 // Close modals on overlay click
 document.querySelectorAll('.modal-overlay').forEach(overlay => {

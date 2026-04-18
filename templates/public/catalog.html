@@ -1,94 +1,691 @@
 {% extends "base_public.html" %}
-{% block title %}Product Catalog — Atlas Pharma{% endblock %}
+{% block title %}Shop — Atlas Pharma{% endblock %}
 
 {% block content %}
-<div class="catalog-page">
-    <div class="catalog-header">
+<div class="shop-page">
+
+    <!-- ============ HERO ============ -->
+    <div class="shop-hero">
         <div class="container">
-            <h1>💊 Product Catalog</h1>
-            <p>Explore our pharmaceutical product range — quality you can trust.</p>
+            <div class="shop-hero-inner">
+                <div>
+                    <div class="shop-crumbs">Home / <span>Shop</span></div>
+                    <h1>Atlas Pharma Shop</h1>
+                    <p>Quality-assured pharmaceuticals — every batch GMP certified, every checkpoint traceable.</p>
+                </div>
+                <div class="shop-trust-badges">
+                    <span class="trust-pill">✓ GMP Certified</span>
+                    <span class="trust-pill">✓ USP Compliant</span>
+                    <span class="trust-pill">✓ ISO 9001</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="container catalog-layout">
-        <!-- Sidebar Filters -->
-        <aside class="catalog-sidebar">
-            <div class="filter-box">
-                <h3 class="filter-title">Filters</h3>
-                
-                <div class="filter-group">
-                    <h4>Category</h4>
-                    <label class="filter-label"><input type="checkbox" checked> All Products</label>
-                    <label class="filter-label"><input type="checkbox"> Pain Relief</label>
-                    <label class="filter-label"><input type="checkbox"> Supplements</label>
+    <div class="container shop-layout">
+
+        <!-- ============ SIDEBAR ============ -->
+        <aside class="shop-sidebar">
+            <div class="filter-block">
+                <div class="filter-head">
+                    <h3>Filters</h3>
+                    <button type="button" id="clearFilters" class="filter-clear">Clear all</button>
                 </div>
-                
+
+                <!-- Search -->
                 <div class="filter-group">
-                    <h4>Dosage Form</h4>
-                    <label class="filter-label"><input type="checkbox"> Tablet</label>
-                    <label class="filter-label"><input type="checkbox"> Syrup</label>
-                    <label class="filter-label"><input type="checkbox"> Capsule</label>
+                    <input type="text" id="searchInput" class="filter-search" placeholder="🔍 Search products...">
                 </div>
-                
+
+                <!-- Category -->
                 <div class="filter-group">
-                    <h4>Availability</h4>
-                    <label class="filter-label"><input type="checkbox" checked> In Stock</label>
+                    <div class="filter-group-title">Category</div>
+                    <div id="categoryList" class="filter-list"></div>
+                </div>
+
+                <!-- Dosage Form -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Dosage Form</div>
+                    <div id="formList" class="filter-list"></div>
+                </div>
+
+                <!-- Availability -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Availability</div>
+                    <div class="filter-list">
+                        <label class="filter-chk"><input type="checkbox" checked disabled><span>In Stock</span></label>
+                    </div>
+                </div>
+
+                <!-- Compliance -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Standards</div>
+                    <div class="filter-list">
+                        <label class="filter-chk"><input type="checkbox" checked disabled><span>USP / BP / IP</span></label>
+                        <label class="filter-chk"><input type="checkbox" checked disabled><span>GMP Certified</span></label>
+                    </div>
                 </div>
             </div>
         </aside>
 
-        <!-- Product Grid -->
-        <main class="catalog-main">
-            <div class="ecommerce-grid">
-                {% for product in products %}
-                <div class="ecommerce-card">
-                    <div class="card-image-wrapper">
-                        {% if product.image_url %}
-                        <img src="{{ product.image_url }}" alt="{{ product.product_name }}" class="card-img">
-                        {% else %}
-                        <img src="https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=400&q=80" alt="{{ product.product_name }}" class="card-img">
-                        {% endif %}
-                        <span class="ecommerce-badge">In Stock</span>
+        <!-- ============ MAIN ============ -->
+        <main class="shop-main">
+
+            <!-- Toolbar -->
+            <div class="shop-toolbar">
+                <div id="resultCount" class="result-count">{{ products|length }} product{{ 's' if products|length != 1 else '' }}</div>
+                <div class="toolbar-right">
+                    <label class="sort-label">Sort:
+                        <select id="sortSelect" class="sort-select">
+                            <option value="featured">Featured</option>
+                            <option value="name-asc">Name (A → Z)</option>
+                            <option value="name-desc">Name (Z → A)</option>
+                            <option value="newest">Newest</option>
+                        </select>
+                    </label>
+                    <div class="view-toggle">
+                        <button type="button" class="view-btn active" data-view="grid" title="Grid view">▦</button>
+                        <button type="button" class="view-btn" data-view="list" title="List view">☰</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Active filter chips -->
+            <div id="activeChips" class="active-chips" style="display:none;"></div>
+
+            <!-- Product grid -->
+            <div class="shop-grid" id="productGrid">
+                {% for product in products %}
+                <article class="product-card"
+                         data-id="{{ product.id }}"
+                         data-name="{{ product.product_name|e }}"
+                         data-category="{{ (product.category or 'Other')|e }}"
+                         data-form="{{ (product.form or product.dosage_form or 'Other')|e }}"
+                         data-description="{{ (product.description or '')|e }}"
+                         data-specs="{{ (product.specifications or '')|e }}"
+                         data-image="{{ product.image_url or '' }}"
+                         data-buylink="{{ product.buy_link or '' }}"
+                         data-created="{{ product.created_at or '' }}">
+
+                    <div class="card-media">
+                        {% if product.image_url %}
+                            <img src="{{ product.image_url }}" alt="{{ product.product_name }}" loading="lazy">
+                        {% else %}
+                            <div class="card-media-placeholder">💊</div>
+                        {% endif %}
+
+                        <div class="card-badges">
+                            <span class="pill pill-stock">In Stock</span>
+                            {% if product.category %}<span class="pill pill-cat">{{ product.category }}</span>{% endif %}
+                        </div>
+
+                        <button type="button" class="quick-view-btn" data-id="{{ product.id }}">
+                            Quick view
+                        </button>
+                    </div>
+
                     <div class="card-body">
-                        <h3>{{ product.product_name }}</h3>
-                        <p class="card-desc">{{ product.description or 'High-quality pharmaceutical product. USP Compliant.' }}</p>
-                        <div class="card-footer">
-                            {% if product.buy_link %}
-                            <a href="{{ product.buy_link }}" target="_blank" class="btn btn-orange btn-block">🛒 Buy on Trendyol</a>
-                            {% else %}
-                            <a href="https://www.trendyol.com" target="_blank" class="btn btn-orange btn-block">🛒 Buy on Trendyol</a>
-                            {% endif %}
-                            <details class="specs-details">
-                                <summary>📄 View Quality Specifications</summary>
-                                <div class="specs-content">
-                                    {% if product.form %}
-                                    <p><strong>Form:</strong> {{ product.form }}</p>
-                                    {% endif %}
-                                    {% if product.category %}
-                                    <p><strong>Category:</strong> {{ product.category }}</p>
-                                    {% endif %}
-                                    {% if product.specifications %}
-                                    <p>{{ product.specifications }}</p>
-                                    {% else %}
-                                    <p><strong>Standard:</strong> USP Compliant</p>
-                                    {% endif %}
-                                </div>
-                            </details>
+                        <div class="card-eyebrow">
+                            {{ product.form or product.dosage_form or 'Pharmaceutical' }}
+                        </div>
+                        <h3 class="card-title">{{ product.product_name }}</h3>
+                        <p class="card-desc">{{ (product.description or 'High-quality pharmaceutical product. USP Compliant.')|truncate(90) }}</p>
+
+                        <div class="card-meta">
+                            <span class="meta-icon">✓</span>
+                            <span>Batch-traceable · GMP certified</span>
+                        </div>
+
+                        <div class="card-actions">
+                            <a href="{{ product.buy_link or 'https://www.trendyol.com' }}" target="_blank" rel="noopener" class="btn-shop">
+                                <span>Shop now</span>
+                                <span class="arrow">→</span>
+                            </a>
                         </div>
                     </div>
-                </div>
+                </article>
                 {% endfor %}
-
-                {% if not products %}
-                <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px;">
-                    <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
-                    <h3 style="color: #555;">No Products Available</h3>
-                    <p style="color: #888;">Check back soon for our product catalog.</p>
-                </div>
-                {% endif %}
             </div>
+
+            <!-- Empty state -->
+            <div id="emptyState" class="shop-empty" style="display: none;">
+                <div class="empty-emoji">🔍</div>
+                <h3>No products match your filters</h3>
+                <p>Try clearing filters or searching for something else.</p>
+                <button type="button" onclick="document.getElementById('clearFilters').click()" class="btn-shop" style="display:inline-flex; margin-top: 12px;">
+                    <span>Clear filters</span>
+                </button>
+            </div>
+
+            {% if not products %}
+            <div class="shop-empty">
+                <div class="empty-emoji">📭</div>
+                <h3>No products available yet</h3>
+                <p>Check back soon — we're updating our catalog.</p>
+            </div>
+            {% endif %}
         </main>
     </div>
 </div>
+
+<!-- ============ QUICK VIEW MODAL ============ -->
+<div id="quickViewModal" class="qv-backdrop" style="display: none;">
+    <div class="qv-body">
+        <button type="button" class="qv-close" onclick="closeQuickView()">✕</button>
+        <div class="qv-grid">
+            <div class="qv-image-wrap">
+                <img id="qvImage" src="" alt="" loading="lazy">
+            </div>
+            <div class="qv-info">
+                <div class="qv-eyebrow" id="qvForm"></div>
+                <h2 id="qvName"></h2>
+                <div class="qv-badges" id="qvBadges"></div>
+                <p id="qvDesc" class="qv-desc"></p>
+
+                <div class="qv-specs" id="qvSpecs"></div>
+
+                <div class="qv-trust">
+                    <div>✓ GMP Certified</div>
+                    <div>✓ USP / BP / IP Compliant</div>
+                    <div>✓ Full batch traceability</div>
+                </div>
+
+                <a href="#" id="qvBuyLink" target="_blank" rel="noopener" class="btn-shop qv-buy">
+                    <span>Shop now on Trendyol</span>
+                    <span class="arrow">→</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ============ PAGE ============ */
+.shop-page {
+    background: #fafbfc;
+    min-height: 100vh;
+}
+
+/* ============ HERO ============ */
+.shop-hero {
+    background: linear-gradient(135deg, #0056b3 0%, #003d7a 100%);
+    padding: 44px 0 50px;
+    color: #fff;
+    margin-bottom: 28px;
+}
+.shop-hero-inner {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    flex-wrap: wrap; gap: 20px;
+}
+.shop-crumbs {
+    font-size: 0.78rem; color: rgba(255,255,255,0.72);
+    margin-bottom: 10px; letter-spacing: 0.3px;
+}
+.shop-crumbs span { color: #fff; }
+.shop-hero h1 {
+    font-size: 2.25rem; margin: 0 0 8px; font-weight: 700;
+    letter-spacing: -0.5px;
+}
+.shop-hero p {
+    font-size: 0.95rem; color: rgba(255,255,255,0.88); margin: 0;
+    max-width: 540px; line-height: 1.55;
+}
+.shop-trust-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.trust-pill {
+    background: rgba(255,255,255,0.12); color: #fff;
+    padding: 6px 13px; border-radius: 18px; font-size: 0.78rem;
+    font-weight: 500; border: 1px solid rgba(255,255,255,0.18);
+    backdrop-filter: blur(10px);
+}
+
+/* ============ LAYOUT ============ */
+.shop-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 32px;
+    padding-bottom: 60px;
+}
+@media (max-width: 900px) {
+    .shop-layout { grid-template-columns: 1fr; }
+    .shop-sidebar { position: static !important; }
+}
+
+/* ============ SIDEBAR ============ */
+.shop-sidebar { position: sticky; top: 92px; align-self: start; }
+.filter-block {
+    background: #fff; border: 1px solid #e7ebf0; border-radius: 12px;
+    padding: 20px 22px;
+}
+.filter-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid #eef1f5;
+}
+.filter-head h3 {
+    margin: 0; font-size: 1rem; color: #1a2330; font-weight: 600;
+}
+.filter-clear {
+    background: none; border: 0; color: #0056b3; font-size: 0.8rem;
+    cursor: pointer; padding: 0; font-weight: 500;
+}
+.filter-clear:hover { text-decoration: underline; }
+
+.filter-group { margin-bottom: 22px; }
+.filter-group:last-child { margin-bottom: 0; }
+.filter-group-title {
+    font-size: 0.72rem; font-weight: 600; color: #5a6476;
+    text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 10px;
+}
+.filter-search {
+    width: 100%; padding: 10px 12px; border: 1px solid #dfe4eb; border-radius: 8px;
+    font-size: 0.85rem; background: #f8faff; transition: all 0.15s;
+}
+.filter-search:focus { outline: none; border-color: #0056b3; background: #fff; }
+
+.filter-list { display: flex; flex-direction: column; gap: 4px; }
+.filter-chk {
+    display: flex; align-items: center; gap: 9px; font-size: 0.85rem;
+    color: #333; cursor: pointer; padding: 5px 8px; border-radius: 6px;
+    transition: background 0.12s;
+}
+.filter-chk:hover { background: #f4f7fc; }
+.filter-chk input { accent-color: #0056b3; cursor: pointer; }
+.filter-chk .count {
+    margin-left: auto; color: #99a1ae; font-size: 0.75rem; font-variant-numeric: tabular-nums;
+}
+.filter-chk input:disabled + span { color: #aab3c0; }
+
+/* ============ TOOLBAR ============ */
+.shop-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #fff; border: 1px solid #e7ebf0; border-radius: 12px;
+    padding: 12px 18px; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
+}
+.result-count { font-size: 0.88rem; color: #5a6476; font-weight: 500; }
+.toolbar-right { display: flex; align-items: center; gap: 16px; }
+.sort-label { font-size: 0.82rem; color: #5a6476; }
+.sort-select {
+    padding: 6px 28px 6px 10px; border: 1px solid #dfe4eb; border-radius: 6px;
+    font-size: 0.83rem; background: #fff; cursor: pointer; margin-left: 6px;
+}
+.view-toggle { display: flex; gap: 4px; background: #f2f4f8; padding: 3px; border-radius: 7px; }
+.view-btn {
+    background: transparent; border: 0; padding: 4px 10px; border-radius: 5px;
+    cursor: pointer; font-size: 1rem; color: #7a869a;
+}
+.view-btn.active { background: #fff; color: #0056b3; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+/* ============ ACTIVE CHIPS ============ */
+.active-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.chip {
+    background: #eaf2ff; color: #0056b3; padding: 5px 10px 5px 12px;
+    border-radius: 14px; font-size: 0.78rem; display: inline-flex;
+    align-items: center; gap: 6px; font-weight: 500;
+}
+.chip .x { cursor: pointer; opacity: 0.6; font-size: 1rem; line-height: 1; }
+.chip .x:hover { opacity: 1; }
+
+/* ============ PRODUCT GRID ============ */
+.shop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 22px;
+}
+.shop-grid.list-view {
+    grid-template-columns: 1fr;
+}
+
+/* ============ PRODUCT CARD ============ */
+.product-card {
+    background: #fff; border: 1px solid #eaedf2; border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column;
+    transition: all 0.2s ease;
+    position: relative;
+}
+.product-card:hover {
+    box-shadow: 0 10px 30px rgba(0, 40, 90, 0.08);
+    transform: translateY(-3px);
+    border-color: #cfd9e8;
+}
+.card-media {
+    position: relative; aspect-ratio: 1 / 1; overflow: hidden;
+    background: linear-gradient(135deg, #f6f9fc 0%, #eef2f8 100%);
+}
+.card-media img {
+    width: 100%; height: 100%; object-fit: cover;
+    transition: transform 0.4s ease;
+}
+.product-card:hover .card-media img { transform: scale(1.06); }
+.card-media-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; font-size: 3.5rem; opacity: 0.35;
+}
+
+.card-badges {
+    position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap;
+}
+.pill {
+    padding: 3px 9px; border-radius: 10px; font-size: 0.68rem;
+    font-weight: 600; letter-spacing: 0.3px;
+    backdrop-filter: blur(4px);
+}
+.pill-stock { background: rgba(40, 167, 69, 0.92); color: #fff; }
+.pill-cat   { background: rgba(255, 255, 255, 0.92); color: #0056b3; }
+
+.quick-view-btn {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%) translateY(8px);
+    background: rgba(255, 255, 255, 0.96); color: #1a2330;
+    border: 0; padding: 8px 18px; border-radius: 20px; font-size: 0.8rem;
+    font-weight: 600; cursor: pointer; opacity: 0; transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    white-space: nowrap;
+}
+.product-card:hover .quick-view-btn {
+    opacity: 1; transform: translateX(-50%) translateY(0);
+}
+
+.card-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.card-eyebrow {
+    font-size: 0.7rem; color: #7a869a; text-transform: uppercase;
+    letter-spacing: 0.7px; font-weight: 600;
+}
+.card-title {
+    font-size: 1rem; color: #1a2330; margin: 0; font-weight: 600;
+    line-height: 1.35; min-height: 2.6em;
+}
+.card-desc {
+    font-size: 0.82rem; color: #667387; line-height: 1.5; margin: 0;
+    min-height: 2.8em;
+}
+.card-meta {
+    display: flex; align-items: center; gap: 6px; font-size: 0.75rem;
+    color: #4b8b4b; margin-top: 2px;
+}
+.meta-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; background: #d4edd4; color: #256625;
+    border-radius: 50%; font-size: 0.65rem; font-weight: 700;
+}
+.card-actions { margin-top: auto; padding-top: 8px; }
+.btn-shop {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: #1a2330; color: #fff !important; padding: 10px 16px;
+    border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+    text-decoration: none; transition: all 0.15s ease;
+    border: 0; cursor: pointer; width: 100%;
+}
+.btn-shop:hover {
+    background: #0056b3; transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 86, 179, 0.25);
+}
+.btn-shop .arrow { transition: transform 0.15s; }
+.btn-shop:hover .arrow { transform: translateX(3px); }
+
+/* ============ LIST VIEW ============ */
+.shop-grid.list-view .product-card {
+    display: grid; grid-template-columns: 160px 1fr auto;
+    align-items: center; gap: 20px;
+}
+.shop-grid.list-view .card-media { aspect-ratio: 1 / 1; }
+.shop-grid.list-view .card-body { padding: 14px 0; }
+.shop-grid.list-view .card-actions {
+    padding: 0 20px 0 0;
+}
+.shop-grid.list-view .btn-shop { width: auto; padding: 10px 22px; }
+.shop-grid.list-view .quick-view-btn { display: none; }
+.shop-grid.list-view .card-title { min-height: 0; }
+.shop-grid.list-view .card-desc { min-height: 0; }
+
+@media (max-width: 700px) {
+    .shop-grid.list-view .product-card {
+        grid-template-columns: 100px 1fr; gap: 14px;
+    }
+    .shop-grid.list-view .card-actions { grid-column: 1 / -1; padding: 0 16px 16px; }
+    .shop-grid.list-view .btn-shop { width: 100%; }
+}
+
+/* ============ EMPTY ============ */
+.shop-empty {
+    background: #fff; border: 1px dashed #d0d7e0; border-radius: 12px;
+    padding: 60px 24px; text-align: center;
+}
+.empty-emoji { font-size: 3.5rem; margin-bottom: 16px; opacity: 0.7; }
+.shop-empty h3 { color: #1a2330; margin: 0 0 8px; font-size: 1.1rem; }
+.shop-empty p { color: #7a869a; margin: 0; font-size: 0.88rem; }
+
+/* ============ QUICK VIEW MODAL ============ */
+.qv-backdrop {
+    position: fixed; inset: 0; background: rgba(10, 20, 40, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    animation: qvfade 0.18s ease;
+}
+@keyframes qvfade { from { opacity: 0; } to { opacity: 1; } }
+.qv-body {
+    background: #fff; border-radius: 14px; max-width: 860px; width: 100%;
+    max-height: 90vh; overflow-y: auto; position: relative;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+    animation: qvpop 0.22s ease;
+}
+@keyframes qvpop { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.qv-close {
+    position: absolute; top: 14px; right: 14px; z-index: 2;
+    background: rgba(255,255,255,0.9); border: 0;
+    width: 34px; height: 34px; border-radius: 50%; font-size: 1rem;
+    cursor: pointer; color: #555; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.qv-close:hover { background: #fff; color: #000; }
+.qv-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 700px) {
+    .qv-grid { grid-template-columns: 1fr; }
+}
+.qv-image-wrap {
+    aspect-ratio: 1 / 1; background: linear-gradient(135deg, #f6f9fc 0%, #eef2f8 100%);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    border-radius: 14px 0 0 14px;
+}
+.qv-image-wrap img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 700px) {
+    .qv-image-wrap { border-radius: 14px 14px 0 0; }
+}
+.qv-info { padding: 32px 30px; display: flex; flex-direction: column; gap: 14px; }
+.qv-eyebrow {
+    font-size: 0.72rem; color: #0056b3; text-transform: uppercase;
+    letter-spacing: 1px; font-weight: 600;
+}
+.qv-info h2 { margin: 0; font-size: 1.45rem; color: #1a2330; line-height: 1.2; }
+.qv-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.qv-badges .pill { position: static; }
+.qv-desc { font-size: 0.92rem; color: #4c566a; line-height: 1.6; margin: 0; }
+.qv-specs {
+    background: #f8faff; border-radius: 8px; padding: 14px 16px;
+    font-size: 0.82rem; color: #455366; line-height: 1.55;
+}
+.qv-specs strong { color: #1a2330; }
+.qv-specs p { margin: 4px 0; }
+.qv-trust {
+    display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem;
+    color: #4b8b4b; padding: 8px 0;
+}
+.qv-buy { padding: 14px 22px; font-size: 0.92rem; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const grid      = document.getElementById('productGrid');
+    const cards     = Array.from(grid.querySelectorAll('.product-card'));
+    const countEl   = document.getElementById('resultCount');
+    const emptyEl   = document.getElementById('emptyState');
+    const searchEl  = document.getElementById('searchInput');
+    const sortSel   = document.getElementById('sortSelect');
+    const chipsEl   = document.getElementById('activeChips');
+
+    // ── Build Category + Form filter lists with counts ──
+    function buildFilterList(attr, containerId) {
+        const counts = new Map();
+        cards.forEach(c => {
+            const vals = (c.dataset[attr] || 'Other').split(',').map(s => s.trim()).filter(Boolean);
+            vals.forEach(v => counts.set(v, (counts.get(v) || 0) + 1));
+        });
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        Array.from(counts.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .forEach(([val, cnt]) => {
+                const label = document.createElement('label');
+                label.className = 'filter-chk';
+                label.innerHTML = `
+                    <input type="checkbox" data-filter="${attr}" value="${val}">
+                    <span>${val}</span>
+                    <span class="count">${cnt}</span>
+                `;
+                container.appendChild(label);
+            });
+    }
+    buildFilterList('category', 'categoryList');
+    buildFilterList('form', 'formList');
+
+    // ── Apply filters/search/sort ──
+    function apply() {
+        const q = (searchEl.value || '').toLowerCase().trim();
+        const selCats  = Array.from(document.querySelectorAll('input[data-filter="category"]:checked')).map(i => i.value);
+        const selForms = Array.from(document.querySelectorAll('input[data-filter="form"]:checked')).map(i => i.value);
+
+        let visible = 0;
+        cards.forEach(card => {
+            const name = (card.dataset.name || '').toLowerCase();
+            const desc = (card.dataset.description || '').toLowerCase();
+            const cat  = card.dataset.category || 'Other';
+            const frm  = card.dataset.form || 'Other';
+
+            const matchQ   = !q || name.includes(q) || desc.includes(q);
+            const matchCat = selCats.length  === 0 || selCats.includes(cat);
+            const matchFrm = selForms.length === 0 || selForms.includes(frm);
+
+            const show = matchQ && matchCat && matchFrm;
+            card.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+
+        // Sort visible cards
+        const sortVal = sortSel.value;
+        const visibleCards = cards.filter(c => c.style.display !== 'none');
+        visibleCards.sort((a, b) => {
+            switch (sortVal) {
+                case 'name-asc':  return a.dataset.name.localeCompare(b.dataset.name);
+                case 'name-desc': return b.dataset.name.localeCompare(a.dataset.name);
+                case 'newest':    return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+                default:          return 0;
+            }
+        });
+        visibleCards.forEach(c => grid.appendChild(c));
+
+        // Count + empty state
+        countEl.textContent = visible + ' product' + (visible !== 1 ? 's' : '');
+        emptyEl.style.display = (visible === 0 && cards.length > 0) ? 'block' : 'none';
+        grid.style.display    = (visible === 0) ? 'none' : '';
+
+        renderChips(selCats, selForms, q);
+    }
+
+    function renderChips(cats, forms, q) {
+        const chips = [];
+        if (q) chips.push({label: `"${q}"`, clear: () => { searchEl.value = ''; apply(); }});
+        cats.forEach(c  => chips.push({label: c, clear: () => toggleFilter('category', c)}));
+        forms.forEach(f => chips.push({label: f, clear: () => toggleFilter('form', f)}));
+
+        if (chips.length === 0) { chipsEl.style.display = 'none'; return; }
+        chipsEl.style.display = 'flex';
+        chipsEl.innerHTML = '';
+        chips.forEach(c => {
+            const el = document.createElement('span');
+            el.className = 'chip';
+            el.innerHTML = `${c.label} <span class="x">×</span>`;
+            el.querySelector('.x').addEventListener('click', c.clear);
+            chipsEl.appendChild(el);
+        });
+    }
+
+    function toggleFilter(attr, value) {
+        const cb = document.querySelector(`input[data-filter="${attr}"][value="${CSS.escape(value)}"]`);
+        if (cb) { cb.checked = !cb.checked; apply(); }
+    }
+
+    // ── Events ──
+    document.querySelectorAll('input[data-filter]').forEach(cb => cb.addEventListener('change', apply));
+    searchEl.addEventListener('input', apply);
+    sortSel.addEventListener('change', apply);
+
+    document.getElementById('clearFilters').addEventListener('click', () => {
+        document.querySelectorAll('input[data-filter]').forEach(cb => cb.checked = false);
+        searchEl.value = '';
+        sortSel.value = 'featured';
+        apply();
+    });
+
+    // ── View toggle ──
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (btn.dataset.view === 'list') grid.classList.add('list-view');
+            else                              grid.classList.remove('list-view');
+        });
+    });
+
+    // ── Quick view modal ──
+    const modal = document.getElementById('quickViewModal');
+    window.closeQuickView = () => { modal.style.display = 'none'; };
+
+    document.querySelectorAll('.quick-view-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const card = btn.closest('.product-card');
+            const d = card.dataset;
+
+            document.getElementById('qvName').textContent     = d.name;
+            document.getElementById('qvForm').textContent     = d.form || 'Pharmaceutical';
+            document.getElementById('qvDesc').textContent     = d.description || 'High-quality pharmaceutical product, manufactured under GMP conditions and compliant with international pharmacopoeia standards.';
+            document.getElementById('qvBuyLink').href         = d.buylink || 'https://www.trendyol.com';
+
+            const img = document.getElementById('qvImage');
+            if (d.image) { img.src = d.image; img.style.display = 'block'; }
+            else { img.removeAttribute('src'); img.style.display = 'none'; }
+
+            // Badges
+            const badges = document.getElementById('qvBadges');
+            badges.innerHTML = '';
+            const addBadge = (cls, text) => {
+                const s = document.createElement('span');
+                s.className = 'pill ' + cls;
+                s.textContent = text;
+                badges.appendChild(s);
+            };
+            addBadge('pill-stock', '✓ In Stock');
+            if (d.category && d.category !== 'Other') addBadge('pill-cat', d.category);
+
+            // Specs block
+            const specsEl = document.getElementById('qvSpecs');
+            const parts = [];
+            if (d.form)     parts.push(`<p><strong>Dosage form:</strong> ${d.form}</p>`);
+            if (d.category) parts.push(`<p><strong>Category:</strong> ${d.category}</p>`);
+            if (d.specs)    parts.push(`<p><strong>Specifications:</strong> ${d.specs}</p>`);
+            parts.push(`<p><strong>Standards:</strong> USP / BP / IP compliant</p>`);
+            specsEl.innerHTML = parts.join('');
+
+            modal.style.display = 'flex';
+        });
+    });
+
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeQuickView(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeQuickView(); });
+
+    apply();
+});
+</script>
 {% endblock %}

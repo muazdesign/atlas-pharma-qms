@@ -8,14 +8,13 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from data.db_manager import (
     init_db, get_user, verify_password, insert_review, get_all_reviews,
     get_reviews_by_status, claim_review, resolve_review, insert_capa,
-    get_all_capa_logs, get_all_specs, get_all_partners,
+    get_all_capa_logs, get_all_partners,
     get_category_counts, get_status_counts, get_review_by_id,
     get_all_users, delete_user, create_user,
     insert_chat_message, get_chat_messages, get_live_operations,
     get_distinct_qc_products, get_qc_checklists_by_product,
     insert_batch_record, get_batch_records_by_batch,
     get_batch_records_for_spc, get_distinct_checkpoints,
-    insert_spec, delete_spec, update_spec, insert_bulk_specs,
     get_all_products, get_active_products, get_or_create_product,
     get_product_by_name, get_product_by_id, update_product,
     delete_product, get_distinct_batches,
@@ -29,6 +28,9 @@ from data.db_manager import (
     link_batch_material, get_batch_materials,
     insert_batch_stage_result, get_batch_stage_results, get_stage_result, can_start_stage,
     insert_capa_from_qc, get_all_capa_logs_extended,
+    # Stage checkpoint library
+    get_stage_library, update_stage_checkpoint_field, insert_custom_stage_checkpoint,
+    deactivate_stage_checkpoint, get_checkpoint_audit_log, EDITABLE_CHECKPOINT_FIELDS,
 )
 from data.aql_tables import get_aql_sample_size, get_available_aql_values, get_available_inspection_levels
 from services.groq_ai import categorize_and_analyze
@@ -266,11 +268,20 @@ def claim_ticket(review_id):
 @app.route('/portal/specs')
 @login_required
 def specs():
-    specs_data = get_all_specs()
+    """Stage Checkpoint Library — the GMP master spec page."""
+    library = get_stage_library()
     partners_data = get_all_partners()
-    products = get_all_products()
-    return render_template('internal/specs_partners.html', specs=specs_data, partners=partners_data,
-                           products=products, defect_types=VALID_DEFECT_TYPES)
+    # Stats for the header
+    total_checkpoints = sum(len(st['checkpoints']) for layer in library for st in layer['stages'])
+    total_stages = sum(len(layer['stages']) for layer in library)
+    return render_template(
+        'internal/specs_partners.html',
+        library=library,
+        partners=partners_data,
+        total_checkpoints=total_checkpoints,
+        total_stages=total_stages,
+        defect_types=['Critical', 'Major', 'Minor', 'Informational'],
+    )
 
 @app.route('/portal/capa', methods=['GET', 'POST'])
 @login_required
@@ -545,10 +556,13 @@ def api_stage_qc_submit():
                 cp = get_checkpoint_by_id(r.get('checkpoint_id')) if r.get('checkpoint_id') else None
                 tol_min = float(cp['tol_min']) if cp and cp['tol_min'] is not None else None
                 tol_max = float(cp['tol_max']) if cp and cp['tol_max'] is not None else None
-                if tol_min is not None and tol_max is not None:
-                    status = 'PASS' if tol_min <= mean <= tol_max else 'FAIL'
+                # Check each bound independently so one-sided specs (e.g. "<= 5%") still validate.
+                if tol_min is None and tol_max is None:
+                    status = 'PASS'  # No numeric spec; informational only
                 else:
-                    status = 'PASS'  # No spec defined; record as PASS
+                    passes_lo = (tol_min is None) or (mean >= tol_min)
+                    passes_hi = (tol_max is None) or (mean <= tol_max)
+                    status = 'PASS' if (passes_lo and passes_hi) else 'FAIL'
                 indiv_json = json.dumps(numeric_vals)
                 sample_count = len(numeric_vals)
 
@@ -676,54 +690,118 @@ def api_spc_data():
 
     records = get_batch_records_for_spc(product, checkpoint, stage_id=stage_id)
     if not records:
-        return jsonify({'batches': [], 'means': [], 'ranges': []}), 200
+        return jsonify({'batches': [], 'chart_type': 'variable', 'means': [], 'ranges': []}), 200
+
+    # Detect chart type: if any row has non-null mean, treat as variables (X-bar/R).
+    # Otherwise if rows have 'PASS'/'FAIL' individuals, treat as attributes (p-chart).
+    has_numeric = any(r['mean'] is not None for r in records)
 
     batches = [r['batch_number'] for r in records]
-    means = [r['mean'] for r in records]
-    ranges = [r['range_val'] for r in records]
-    sample_count = records[0]['sample_count']
-    tol_min = records[0]['tol_min']
-    tol_max = records[0]['tol_max']
 
-    # Calculate grand mean (X-double-bar) and average range (R-bar)
-    x_double_bar = sum(means) / len(means) if means else 0
-    r_bar = sum(ranges) / len(ranges) if ranges else 0
+    # ── Variables data (numeric) ────────────────────────────────────────
+    if has_numeric:
+        means = [r['mean'] if r['mean'] is not None else 0.0 for r in records]
+        ranges = [r['range_val'] if r['range_val'] is not None else 0.0 for r in records]
+        individuals = []
+        for r in records:
+            try:
+                vals = json.loads(r['individual_values']) if r['individual_values'] else []
+                individuals.append([float(v) for v in vals if isinstance(v, (int, float)) or
+                                    (isinstance(v, str) and v.replace('.', '', 1).lstrip('-').isdigit())])
+            except (ValueError, TypeError):
+                individuals.append([])
 
-    # A2, D3, D4 constants for X-bar and R chart (standard SPC tables)
-    spc_constants = {
-        1:  {'A2': 2.660, 'D3': 0.000, 'D4': 3.267},
-        2:  {'A2': 1.880, 'D3': 0.000, 'D4': 3.267},
-        3:  {'A2': 1.023, 'D3': 0.000, 'D4': 2.574},
-        4:  {'A2': 0.729, 'D3': 0.000, 'D4': 2.282},
-        5:  {'A2': 0.577, 'D3': 0.000, 'D4': 2.114},
-        6:  {'A2': 0.483, 'D3': 0.000, 'D4': 2.004},
-        7:  {'A2': 0.419, 'D3': 0.076, 'D4': 1.924},
-        8:  {'A2': 0.373, 'D3': 0.136, 'D4': 1.864},
-        9:  {'A2': 0.337, 'D3': 0.184, 'D4': 1.816},
-        10: {'A2': 0.308, 'D3': 0.223, 'D4': 1.777},
-    }
+        sample_count = records[0]['sample_count'] or 1
+        tol_min = records[0]['tol_min']
+        tol_max = records[0]['tol_max']
 
-    n = min(sample_count, 10)
-    constants = spc_constants.get(n, spc_constants[5])
+        x_double_bar = sum(means) / len(means) if means else 0
+        r_bar = sum(ranges) / len(ranges) if ranges else 0
 
-    ucl_xbar = round(x_double_bar + constants['A2'] * r_bar, 4)
-    lcl_xbar = round(x_double_bar - constants['A2'] * r_bar, 4)
-    ucl_r = round(constants['D4'] * r_bar, 4)
-    lcl_r = round(constants['D3'] * r_bar, 4)
+        spc_constants = {
+            1:  {'A2': 2.660, 'D3': 0.000, 'D4': 3.267},
+            2:  {'A2': 1.880, 'D3': 0.000, 'D4': 3.267},
+            3:  {'A2': 1.023, 'D3': 0.000, 'D4': 2.574},
+            4:  {'A2': 0.729, 'D3': 0.000, 'D4': 2.282},
+            5:  {'A2': 0.577, 'D3': 0.000, 'D4': 2.114},
+            6:  {'A2': 0.483, 'D3': 0.000, 'D4': 2.004},
+            7:  {'A2': 0.419, 'D3': 0.076, 'D4': 1.924},
+            8:  {'A2': 0.373, 'D3': 0.136, 'D4': 1.864},
+            9:  {'A2': 0.337, 'D3': 0.184, 'D4': 1.816},
+            10: {'A2': 0.308, 'D3': 0.223, 'D4': 1.777},
+        }
+        n = max(1, min(sample_count, 10))
+        c = spc_constants.get(n, spc_constants[5])
+        ucl_xbar = round(x_double_bar + c['A2'] * r_bar, 4)
+        lcl_xbar = round(x_double_bar - c['A2'] * r_bar, 4)
+        ucl_r = round(c['D4'] * r_bar, 4)
+        lcl_r = round(c['D3'] * r_bar, 4)
+
+        # Flatten all individual samples into a single ordered sequence
+        flat_values = []
+        batch_boundaries = []  # {sample_index, label} marks where each batch starts
+        for batchIdx, samples in enumerate(individuals):
+            batch_boundaries.append({'sample_index': len(flat_values), 'label': batches[batchIdx]})
+            flat_values.extend(samples)
+
+        return jsonify({
+            'chart_type': 'variable',
+            'batches': batches,
+            'means': means,
+            'ranges': ranges,
+            'individuals': individuals,
+            'flat_values': flat_values,
+            'batch_boundaries': batch_boundaries,
+            'x_double_bar': round(x_double_bar, 4),
+            'r_bar': round(r_bar, 4),
+            'ucl_xbar': ucl_xbar,
+            'lcl_xbar': lcl_xbar,
+            'ucl_r': ucl_r,
+            'lcl_r': lcl_r,
+            'tol_min': tol_min,
+            'tol_max': tol_max,
+            'sample_count': sample_count
+        }), 200
+
+    # ── Attributes data (PASS/FAIL) — p-chart ───────────────────────────
+    import math
+    sample_sizes = []
+    fail_counts = []
+    fail_rates = []
+    for r in records:
+        try:
+            vals = json.loads(r['individual_values']) if r['individual_values'] else []
+        except (ValueError, TypeError):
+            vals = []
+        n = len(vals) or (r['sample_count'] or 1)
+        d = sum(1 for v in vals if str(v).upper() in ('FAIL', 'F', 'NO'))
+        # If row-level status is FAIL and vals is empty, count 1 fail out of 1 sample
+        if not vals and (r['status'] or '').upper() == 'FAIL':
+            d = 1
+        sample_sizes.append(n)
+        fail_counts.append(d)
+        fail_rates.append(round(d / n, 4) if n else 0.0)
+
+    total_samples = sum(sample_sizes) or 1
+    total_fails = sum(fail_counts)
+    p_bar = total_fails / total_samples
+    n_bar = total_samples / len(sample_sizes) if sample_sizes else 1
+    # Standard p-chart control limits (using average n for approximation)
+    sigma = math.sqrt(p_bar * (1 - p_bar) / n_bar) if n_bar > 0 else 0
+    ucl_p = min(1.0, round(p_bar + 3 * sigma, 4))
+    lcl_p = max(0.0, round(p_bar - 3 * sigma, 4))
 
     return jsonify({
+        'chart_type': 'attribute',
         'batches': batches,
-        'means': means,
-        'ranges': ranges,
-        'x_double_bar': round(x_double_bar, 4),
-        'r_bar': round(r_bar, 4),
-        'ucl_xbar': ucl_xbar,
-        'lcl_xbar': lcl_xbar,
-        'ucl_r': ucl_r,
-        'lcl_r': lcl_r,
-        'tol_min': tol_min,
-        'tol_max': tol_max,
-        'sample_count': sample_count
+        'sample_sizes': sample_sizes,
+        'fail_counts': fail_counts,
+        'fail_rates': fail_rates,
+        'p_bar': round(p_bar, 4),
+        'ucl_p': ucl_p,
+        'lcl_p': lcl_p,
+        'total_samples': total_samples,
+        'total_fails': total_fails
     }), 200
 
 
@@ -762,10 +840,28 @@ def api_batch_summary(batch_number):
     pass_count = 0
     fail_count = 0
     for r in records:
+        # Safe parse — individual_values may be NULL in older records
+        raw_vals = r['individual_values']
+        try:
+            vals = json.loads(raw_vals) if raw_vals else []
+        except (ValueError, TypeError):
+            vals = []
+
+        # Determine result type from the values
+        if vals and all(isinstance(v, (int, float)) for v in vals):
+            result_type = 'numeric'
+        elif vals and all(str(v).upper() in ('PASS', 'FAIL', 'YES', 'NO', 'P', 'F') for v in vals):
+            result_type = 'passfail'
+        elif not vals and r['mean'] is not None:
+            result_type = 'numeric'
+        else:
+            result_type = 'text'
+
         test = {
             'id': r['id'],
             'checkpoint': r['checkpoint'],
-            'individual_values': json.loads(r['individual_values']),
+            'individual_values': vals,
+            'result_type': result_type,
             'sample_count': r['sample_count'],
             'mean': r['mean'],
             'range_val': r['range_val'],
@@ -774,9 +870,9 @@ def api_batch_summary(batch_number):
             'status': r['status'],
             'tested_by': r['tested_by'],
             'tested_at': r['tested_at'],
-            'tolerance': r.get('tolerance', ''),
-            'unit': r.get('unit', ''),
-            'sample_size': r.get('sample_size', ''),
+            'tolerance': (r['tolerance'] if 'tolerance' in r.keys() else '') or '',
+            'unit':      (r['unit']      if 'unit'      in r.keys() else '') or '',
+            'sample_size': (r['sample_size'] if 'sample_size' in r.keys() else '') or '',
         }
         tests.append(test)
         if r['status'] == 'PASS':
@@ -958,68 +1054,143 @@ def upload_product_image(product_id):
     return jsonify({'status': 'ok', 'image_url': image_url}), 200
 
 
-@app.route('/portal/specs/import', methods=['POST'])
+def _can_edit_library():
+    return 'user' in session and session['user']['role'] in ('Quality Manager', 'Admin', 'Executive')
+
+
+@app.route('/portal/specs/edit/<int:checkpoint_id>', methods=['POST'])
 @login_required
-def import_specs():
-    """Bulk import specifications from JSON (parsed Excel)."""
-    if session['user']['role'] not in ('Quality Manager', 'Executive'):
-        flash("Unauthorized.", "danger")
-        return redirect(url_for('specs'))
+def edit_library_checkpoint(checkpoint_id):
+    """Update one editable field on a stage checkpoint (writes audit log)."""
+    if not _can_edit_library():
+        return jsonify({'ok': False, 'error': 'Unauthorized'}), 403
 
-    product_name = request.form.get('product_name')
-    form = request.form.get('form')
-    rows_json = request.form.get('rows_json')
+    field = request.form.get('field', '').strip()
+    new_value = request.form.get('value', '').strip()
+    reason = request.form.get('reason', '').strip()
 
-    if not all([product_name, form, rows_json]):
-        flash("Missing import data.", "warning")
+    if field not in EDITABLE_CHECKPOINT_FIELDS:
+        return jsonify({'ok': False, 'error': f"Field '{field}' not editable"}), 400
+
+    ok, err = update_stage_checkpoint_field(
+        checkpoint_id, field, new_value,
+        user=session['user']['full_name'], reason=reason
+    )
+    if not ok:
+        return jsonify({'ok': False, 'error': err}), 400
+    return jsonify({'ok': True}), 200
+
+
+@app.route('/portal/specs/add-custom', methods=['POST'])
+@login_required
+def add_custom_checkpoint():
+    """Add a user-created checkpoint to an existing stage."""
+    if not _can_edit_library():
+        flash("Only Quality Manager / Admin can modify the library.", "danger")
         return redirect(url_for('specs'))
 
     try:
-        rows = json.loads(rows_json)
-        insert_bulk_specs(product_name, form, rows)
-        flash(f"Successfully imported {len(rows)} specifications for {product_name}.", "success")
-    except Exception as e:
-        flash(f"Import failed: {str(e)}", "danger")
+        stage_id = int(request.form.get('stage_id'))
+    except (TypeError, ValueError):
+        flash("Invalid stage.", "warning")
+        return redirect(url_for('specs'))
 
+    name = (request.form.get('checkpoint_name') or '').strip()
+    if not name:
+        flash("Checkpoint name is required.", "warning")
+        return redirect(url_for('specs'))
+
+    data = {
+        'section': request.form.get('section', '').strip(),
+        'checkpoint_no': request.form.get('checkpoint_no', '').strip() or 'C',
+        'checkpoint_name': name,
+        'sample_size': request.form.get('sample_size', '').strip(),
+        'sample_count': request.form.get('sample_count', '1').strip() or '1',
+        'instruction': request.form.get('instruction', '').strip(),
+        'tolerance': request.form.get('tolerance', '').strip(),
+        'unit': request.form.get('unit', '').strip(),
+        'frequency': request.form.get('frequency', '').strip(),
+        'defect_type': request.form.get('defect_type', '').strip(),
+        'test_type': request.form.get('test_type', 'variable').strip(),
+        'result_type': request.form.get('result_type', 'numeric').strip(),
+        'reason': request.form.get('reason', '').strip() or 'Custom addition',
+    }
+    try:
+        new_id = insert_custom_stage_checkpoint(stage_id, data, user=session['user']['full_name'])
+        flash(f"Custom checkpoint added (id #{new_id}).", "success")
+    except Exception as e:
+        flash(f"Failed to add checkpoint: {e}", "danger")
     return redirect(url_for('specs'))
 
 
-@app.route('/portal/specs/add', methods=['POST'])
+@app.route('/portal/specs/deactivate/<int:checkpoint_id>', methods=['POST'])
 @login_required
-def add_spec():
-    if session['user']['role'] not in ('Quality Manager', 'Executive'):
+def deactivate_checkpoint(checkpoint_id):
+    """Soft-delete a checkpoint from the active library."""
+    if not _can_edit_library():
         flash("Unauthorized.", "danger")
         return redirect(url_for('specs'))
-
-    # Match new schema
-    p_name = request.form.get('product_name')
-    form = request.form.get('form')
-    checkpoint = request.form.get('checkpoint')
-    sample = request.form.get('sample_size')
-    method = request.form.get('test_method')
-    tolerance = request.form.get('tolerance')
-    pass_fail = request.form.get('pass_fail')
-    defect = request.form.get('defect_type')
-
-    if all([p_name, form, checkpoint]):
-        insert_spec(p_name, form, checkpoint, sample, method, tolerance, pass_fail, defect)
-        flash("Specification added.", "success")
-    else:
-        flash("All fields are required.", "warning")
-
+    reason = request.form.get('reason', '')
+    ok, err = deactivate_stage_checkpoint(
+        checkpoint_id, user=session['user']['full_name'], reason=reason
+    )
+    flash("Checkpoint deactivated." if ok else f"Failed: {err}", "success" if ok else "danger")
     return redirect(url_for('specs'))
 
 
-@app.route('/portal/specs/delete/<int:spec_id>', methods=['POST'])
+@app.route('/api/checkpoint/<int:checkpoint_id>/audit')
 @login_required
-def remove_spec(spec_id):
-    if session['user']['role'] not in ('Quality Manager', 'Executive'):
-        flash("You don't have permission to delete specifications.", "danger")
-        return redirect(url_for('specs'))
+def api_checkpoint_audit(checkpoint_id):
+    """Return audit log for a checkpoint."""
+    rows = get_checkpoint_audit_log(checkpoint_id)
+    return jsonify([dict(r) for r in rows]), 200
 
-    delete_spec(spec_id)
-    flash("Specification removed.", "success")
-    return redirect(url_for('specs'))
+
+@app.route('/portal/specs/export.xlsx')
+@login_required
+def export_library():
+    """Download current active library as Excel."""
+    from io import BytesIO
+    from flask import send_file
+
+    library = get_stage_library()
+    rows = []
+    for layer in library:
+        for stage in layer['stages']:
+            for cp in stage['checkpoints']:
+                rows.append({
+                    'Layer': layer['layer'],
+                    'Stage Code': stage['stage_code'],
+                    'Stage Name': stage['stage_name'],
+                    'Product Form': stage.get('product_form') or '—',
+                    'Checkpoint #': cp.get('checkpoint_no', ''),
+                    'Checkpoint': cp.get('checkpoint_name', ''),
+                    'Section': cp.get('section', ''),
+                    'Sample Size': cp.get('sample_size', ''),
+                    'n (samples)': cp.get('sample_count', ''),
+                    'Tolerance': cp.get('tolerance', ''),
+                    'Unit': cp.get('unit', ''),
+                    'Tol Min': cp.get('tol_min'),
+                    'Tol Max': cp.get('tol_max'),
+                    'Frequency': cp.get('frequency', ''),
+                    'Defect Type': cp.get('defect_type', ''),
+                    'Test Type': cp.get('test_type', ''),
+                    'Result Type': cp.get('result_type', ''),
+                    'Source': cp.get('source', 'Excel'),
+                    'Updated By': cp.get('updated_by', ''),
+                    'Updated At': cp.get('updated_at', ''),
+                })
+    df = pd.DataFrame(rows)
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Stage Checkpoint Library', index=False)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='atlas_stage_checkpoint_library.xlsx'
+    )
 
 
 # ─── Batch Tracker ────────────────────────────────────────────────────────────

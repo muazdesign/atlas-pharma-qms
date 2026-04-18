@@ -1,204 +1,169 @@
 {% extends "base_internal.html" %}
-{% block title %}Specs & Partners — Atlas QMS{% endblock %}
+{% block title %}Spec Library & Partners — Atlas QMS{% endblock %}
 
 {% block content %}
 <div class="portal-topbar">
     <div>
-        <h1>📋 Product Specs & Lab Partners</h1>
-        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">The source of truth for quality parameters and
-            testing partners.</p>
+        <h1>📋 Stage Checkpoint Library &amp; Lab Partners</h1>
+        <p style="color: #888; font-size: 0.9rem; margin-top: 4px;">
+            The single source of truth for GMP quality parameters — IQC, IPQC, and FQC — and our accredited testing partners.
+        </p>
     </div>
 </div>
 
 <div class="tabs-wrapper">
     <div class="tabs">
-        <button class="tab active" data-tab="tab-specs">🔬 Product Specifications</button>
+        <button class="tab active" data-tab="tab-specs">🔬 Stage Checkpoint Library</button>
         <button class="tab" data-tab="tab-partners">🏛️ Lab Partners</button>
     </div>
 
-    <!-- Tab 1: Specs -->
+    <!-- ============ TAB 1: STAGE LIBRARY ============ -->
     <div id="tab-specs" class="tab-panel active">
 
-        <!-- Upload QC Checklist (Quality Manager & Executive only) -->
-        {% if session.user.role in ['Quality Manager', 'Executive'] %}
-        <div class="card" style="padding: 20px; margin-bottom: 20px; border: 1px dashed #ccdcf0; background: #fafcff;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <!-- Library summary + actions bar -->
+        <div class="card" style="padding: 18px 22px; margin: 18px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; gap: 26px; flex-wrap: wrap;">
                 <div>
-                    <h3 style="color: #0056b3; margin: 0 0 4px 0; font-size: 0.95rem;">📥 Import QC Checklist from Excel</h3>
-                    <p style="margin: 0; font-size: 0.78rem; color: #888;">
-                        Expects columns: <code>No</code>, <code>Checkpoint</code>, <code>Sample Size</code>,
-                        <code>Test Method</code>, <code>Tolerance</code>, <code>Pass / Fail Criterion</code>,
-                        <code>Defect Type if Fail</code>
-                    </p>
+                    <div style="font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: 0.6px;">Active Stages</div>
+                    <div style="font-size: 1.6rem; font-weight: 600; color: #0056b3;">{{ total_stages }}</div>
                 </div>
-                <button type="button" id="toggleUpload" class="btn btn-secondary"
-                    style="padding: 6px 14px; font-size: 0.8rem;">
-                    Show Upload
-                </button>
+                <div>
+                    <div style="font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: 0.6px;">Active Checkpoints</div>
+                    <div style="font-size: 1.6rem; font-weight: 600; color: #0056b3;">{{ total_checkpoints }}</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: 0.6px;">Layers</div>
+                    <div style="font-size: 1.6rem; font-weight: 600; color: #0056b3;">IQC · IPQC · FQC</div>
+                </div>
             </div>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="libSearch" class="form-control" placeholder="🔍 Filter checkpoints..."
+                       style="padding: 7px 12px; font-size: 0.85rem; width: 260px;">
+                <a href="{{ url_for('export_library') }}" class="btn btn-secondary" style="padding: 8px 16px; font-size: 0.85rem;">
+                    ⬇ Export .xlsx
+                </a>
+            </div>
+        </div>
 
-            <div id="uploadSection" style="display: none;">
-                <!-- Step 1: Pick product & upload file -->
-                <div style="display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
-                    <div class="form-group" style="margin-bottom: 0; min-width: 240px;">
-                        <label style="font-size: 0.78rem;">Product Name <span style="color:red;">*</span></label>
-                        <input type="text" id="uploadProductName" class="form-control"
-                            placeholder="e.g. Paracetamol Tablet 500 mg"
-                            style="font-size: 0.85rem; padding: 8px 12px;">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0; min-width: 140px;">
-                        <label style="font-size: 0.78rem;">Form <span style="color:red;">*</span></label>
-                        <select id="uploadForm" class="form-control" style="font-size: 0.85rem; padding: 8px 12px;">
-                            <option value="Tablet">Tablet</option>
-                            <option value="Syrup">Syrup</option>
-                            <option value="Capsule">Capsule</option>
-                            <option value="Injection">Injection</option>
-                            <option value="Cream">Cream</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-size: 0.78rem;">Excel File (.xlsx / .xls) <span style="color:red;">*</span></label>
-                        <input type="file" id="excelFileInput" accept=".xlsx,.xls"
-                            style="font-size: 0.85rem; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; background: #fff;">
-                    </div>
-                    <button type="button" id="parseExcelBtn" class="btn btn-primary"
-                        style="padding: 8px 18px; font-size: 0.85rem;">
-                        📊 Preview
+        <!-- Layer filter pills -->
+        <div style="display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;">
+            <button class="layer-pill active" data-layer="ALL">All Layers</button>
+            <button class="layer-pill" data-layer="IQC">IQC — Incoming</button>
+            <button class="layer-pill" data-layer="IPQC">IPQC — In-Process</button>
+            <button class="layer-pill" data-layer="FQC">FQC — Finished</button>
+        </div>
+
+        <!-- Library grouped by Layer -> Stage -->
+        {% for layer_group in library %}
+        <div class="layer-section" data-layer="{{ layer_group.layer }}">
+            <h2 class="layer-heading">
+                {% if layer_group.layer == 'IQC' %}🟦 IQC — Incoming Quality Control
+                {% elif layer_group.layer == 'IPQC' %}🟧 IPQC — In-Process Quality Control
+                {% elif layer_group.layer == 'FQC' %}🟩 FQC — Finished Product Quality Control
+                {% else %}{{ layer_group.layer }}{% endif %}
+            </h2>
+
+            {% for stage in layer_group.stages %}
+            <details class="stage-accordion" {% if loop.first %}open{% endif %}>
+                <summary>
+                    <span class="stage-code">{{ stage.stage_code }}</span>
+                    <span class="stage-name">{{ stage.stage_name }}</span>
+                    {% if stage.product_form %}<span class="stage-form">{{ stage.product_form }}</span>{% endif %}
+                    <span class="stage-count">{{ stage.checkpoints|length }} checkpoint{{ 's' if stage.checkpoints|length != 1 else '' }}</span>
+                    {% if session.user.role in ['Quality Manager', 'Admin', 'Executive'] %}
+                    <button type="button" class="btn btn-primary add-cp-btn"
+                            data-stage-id="{{ stage.id }}"
+                            data-stage-name="{{ stage.stage_name }}"
+                            style="padding: 4px 12px; font-size: 0.75rem; margin-left: auto;">
+                        + Add custom
                     </button>
-                </div>
+                    {% endif %}
+                </summary>
 
-                <!-- Preview table -->
-                <div id="previewSection" style="display:none;">
-                    <div style="font-size: 0.82rem; color: #555; margin-bottom: 8px;">
-                        Preview — <span id="previewCount">0</span> rows parsed. Review before importing.
-                    </div>
-                    <div style="overflow-x: auto; max-height: 300px; border: 1px solid #dce8f8; border-radius: 8px;">
-                        <table style="width:100%; border-collapse: collapse; font-size: 0.8rem;">
-                            <thead style="background: #eaf1fb; position: sticky; top: 0;">
-                                <tr>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">#</th>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Checkpoint</th>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Sample Size</th>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Test Method</th>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Tolerance</th>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Pass/Fail Criterion</th>
-                                    <th style="padding: 8px 10px; text-align:left; border-bottom: 1px solid #cce0f5;">Defect Type if Fail</th>
-                                </tr>
-                            </thead>
-                            <tbody id="previewTableBody"></tbody>
-                        </table>
-                    </div>
-                    <!-- Hidden form to POST parsed data -->
-                    <form method="POST" action="/portal/specs/import" id="importForm" style="margin-top: 14px;">
-                        <input type="hidden" name="product_name" id="hiddenProductName">
-                        <input type="hidden" name="form" id="hiddenForm">
-                        <input type="hidden" name="rows_json" id="hiddenRowsJson">
-                        <div style="display:flex; gap: 10px; align-items: center;">
-                            <button type="submit" class="btn btn-success"
-                                style="padding: 8px 22px; font-size: 0.85rem;">
-                                💾 Import All Rows
-                            </button>
-                            <button type="button" id="cancelPreview" class="btn btn-secondary"
-                                style="padding: 8px 16px; font-size: 0.85rem;">
-                                ✕ Cancel
-                            </button>
-                            <span style="font-size:0.78rem; color:#888;">
-                                This will add <strong id="previewCount2">0</strong> specification rows for
-                                <strong id="previewProductLabel"></strong>.
-                            </span>
-                        </div>
-                    </form>
-                </div>
-
-                <div id="parseError" style="display:none; color:#c0392b; font-size:0.82rem; margin-top:8px;"></div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Specs Table -->
-        <div class="card" style="padding: 24px;">
-            {% if specs %}
-            <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 12px; background: #f8faff; padding: 12px 16px; border-radius: 8px; border: 1px solid #e1e8f0;">
-                <label for="productFilter" style="font-weight: 600; color: #333; font-size: 0.95rem;">💊 Filter by Product:</label>
-                <select id="productFilter" class="form-control" style="width: auto; padding: 6px 12px; border-radius: 6px;">
-                    <option value="All">All Products (View All Specs)</option>
-                </select>
-            </div>
-            <div style="overflow-x: auto;">
-                <table class="specs-table" id="specsTable" style="margin: 0; font-size: 0.83rem;">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Product</th>
-                            <th>Form</th>
-                            <th>Checkpoint</th>
-                            <th>Sample Size</th>
-                            <th>Test Method</th>
-                            <th>Tolerance</th>
-                            <th>Pass / Fail Criterion</th>
-                            <th>Defect Type if Fail</th>
-                            {% if session.user.role in ['Quality Manager', 'Executive'] %}
-                            <th style="width: 60px; text-align: center;">Action</th>
-                            {% endif %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in specs %}
-                        <tr>
-                            <td style="color:#aaa; font-size:0.75rem;">{{ loop.index }}</td>
-                            <td>{{ s.product_name }}</td>
-                            <td>{{ s.form }}</td>
-                            <td style="font-weight: 500;">{{ s.checkpoint }}</td>
-                            <td>{{ s.sample_size }}</td>
-                            <td>{{ s.test_method }}</td>
-                            <td>{{ s.tolerance }}</td>
-                            <td>
-                                <span style="
-                                    display: inline-block;
-                                    padding: 2px 8px;
-                                    border-radius: 12px;
-                                    font-size: 0.75rem;
-                                    font-weight: 600;
-                                    background: {% if s.pass_fail_criterion and 'Critical' in (s.pass_fail_criterion or '') %}#fff0f0{% else %}#f0fff4{% endif %};
-                                    color: {% if s.pass_fail_criterion and 'Critical' in (s.pass_fail_criterion or '') %}#c0392b{% else %}#27ae60{% endif %};
-                                ">{{ s.pass_fail_criterion or '—' }}</span>
-                            </td>
-                            <td>
-                                {% if s.defect_type == 'Critical' %}
-                                <span style="color: #c0392b; font-weight:600; font-size:0.78rem;">⊖ Critical</span>
-                                {% elif s.defect_type == 'Major' %}
-                                <span style="color: #e67e22; font-weight:600; font-size:0.78rem;">⚠ Major</span>
-                                {% elif s.defect_type == 'Minor' %}
-                                <span style="color: #2980b9; font-size:0.78rem;">ℹ Minor</span>
-                                {% elif s.defect_type == 'Informational' %}
-                                <span style="color: #27ae60; font-size:0.78rem;">✓ Informational</span>
-                                {% else %}
-                                <span style="color: #999; font-size:0.78rem;">—</span>
+                {% if stage.checkpoints %}
+                <div class="cp-table-wrap">
+                    <table class="cp-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;">#</th>
+                                <th>Checkpoint</th>
+                                <th style="width: 110px;">Sample Size</th>
+                                <th style="width: 70px;">n</th>
+                                <th style="width: 200px;">Tolerance</th>
+                                <th style="width: 80px;">Unit</th>
+                                <th style="width: 110px;">Defect</th>
+                                <th style="width: 90px;">Type</th>
+                                <th style="width: 100px;">Source</th>
+                                {% if session.user.role in ['Quality Manager', 'Admin', 'Executive'] %}
+                                <th style="width: 120px;">Actions</th>
                                 {% endif %}
-                            </td>
-                            {% if session.user.role in ['Quality Manager', 'Executive'] %}
-                            <td style="text-align: center;">
-                                <form method="POST" action="/portal/specs/delete/{{ s.id }}" style="margin: 0;"
-                                    data-confirm="Are you sure you want to delete this specification?">
-                                    <button type="submit" class="btn btn-danger"
-                                        style="padding: 4px 10px; font-size: 0.72rem; border-radius: 6px; min-width: unset;">
-                                        ✕
-                                    </button>
-                                </form>
-                            </td>
-                            {% endif %}
-                        </tr>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for cp in stage.checkpoints %}
+                            <tr class="cp-row"
+                                data-cp-id="{{ cp.id }}"
+                                data-cp-name="{{ cp.checkpoint_name|e }}"
+                                data-search="{{ cp.checkpoint_name|lower }} {{ cp.tolerance|lower }} {{ stage.stage_code|lower }}">
+                                <td class="cp-no">{{ cp.checkpoint_no }}</td>
+                                <td>
+                                    <div class="cp-name">{{ cp.checkpoint_name }}</div>
+                                    {% if cp.instruction %}
+                                    <div class="cp-instruction">💡 {{ cp.instruction }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="cp-cell" data-field="sample_size">{{ cp.sample_size or '—' }}</td>
+                                <td class="cp-cell" data-field="sample_count">{{ cp.sample_count or 1 }}</td>
+                                <td class="cp-cell" data-field="tolerance">
+                                    {{ cp.tolerance or '—' }}
+                                    {% if cp.tol_min is not none or cp.tol_max is not none %}
+                                    <div class="cp-bounds">[{{ cp.tol_min if cp.tol_min is not none else '—' }} — {{ cp.tol_max if cp.tol_max is not none else '—' }}]</div>
+                                    {% endif %}
+                                </td>
+                                <td class="cp-cell" data-field="unit">{{ cp.unit or '—' }}</td>
+                                <td>
+                                    {% if cp.defect_type == 'Critical' %}<span class="badge-critical">Critical</span>
+                                    {% elif cp.defect_type == 'Major' %}<span class="badge-major">Major</span>
+                                    {% elif cp.defect_type == 'Minor' %}<span class="badge-minor">Minor</span>
+                                    {% elif cp.defect_type == 'Informational' %}<span class="badge-info">Info</span>
+                                    {% else %}<span style="color:#bbb;">—</span>{% endif %}
+                                </td>
+                                <td style="font-size: 0.75rem; color: #666;">{{ cp.result_type or 'numeric' }}</td>
+                                <td>
+                                    {% if cp.source == 'Custom' %}
+                                    <span class="src-custom">✏️ Custom</span>
+                                    {% else %}
+                                    <span class="src-excel">📄 Seeded</span>
+                                    {% endif %}
+                                </td>
+                                {% if session.user.role in ['Quality Manager', 'Admin', 'Executive'] %}
+                                <td class="cp-actions">
+                                    <button class="action-btn edit-btn" title="Edit">✏️</button>
+                                    <button class="action-btn history-btn" title="View audit log">📜</button>
+                                    <form method="POST" action="{{ url_for('deactivate_checkpoint', checkpoint_id=cp.id) }}"
+                                          style="display:inline-block; margin:0;"
+                                          onsubmit="return confirm('Deactivate this checkpoint? It will be hidden from QC entry forms.');">
+                                        <button class="action-btn delete-btn" type="submit" title="Deactivate">🗑️</button>
+                                    </form>
+                                </td>
+                                {% endif %}
+                            </tr>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="alert alert-info" style="margin:0;">No specifications loaded. Import an Excel QC checklist above.</div>
-            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info" style="margin: 14px 0;">No checkpoints defined for this stage yet.</div>
+                {% endif %}
+            </details>
+            {% endfor %}
         </div>
+        {% else %}
+        <div class="alert alert-info">No stages loaded. Run the seed script: <code>python data/seed_data.py</code></div>
+        {% endfor %}
     </div>
 
-    <!-- Tab 2: Partners -->
+    <!-- ============ TAB 2: PARTNERS (unchanged) ============ -->
     <div id="tab-partners" class="tab-panel">
         <div class="card-grid" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
             {% for p in partners %}
@@ -220,189 +185,408 @@
         </div>
     </div>
 </div>
+
+<!-- ============ MODAL: EDIT CHECKPOINT FIELD ============ -->
+<div id="editModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-body">
+        <h3 style="margin:0 0 8px;">Edit Checkpoint</h3>
+        <p id="editCpName" style="color:#666; font-size: 0.85rem; margin: 0 0 18px;"></p>
+
+        <form id="editForm">
+            <input type="hidden" id="editCpId">
+
+            <div class="form-group">
+                <label>Field to edit</label>
+                <select id="editField" class="form-control">
+                    <option value="tolerance">Tolerance (e.g. "98.0 - 101.5 %")</option>
+                    <option value="sample_size">Sample size description</option>
+                    <option value="sample_count">Number of samples (n)</option>
+                    <option value="unit">Unit</option>
+                    <option value="tol_min">Tol Min (numeric)</option>
+                    <option value="tol_max">Tol Max (numeric)</option>
+                    <option value="instruction">Instruction</option>
+                    <option value="frequency">Frequency</option>
+                    <option value="defect_type">Defect type</option>
+                    <option value="test_type">Test type (variable/attribute)</option>
+                    <option value="result_type">Result type (numeric/passfail/text)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>New value</label>
+                <input type="text" id="editValue" class="form-control" required>
+                <div id="editHelpText" style="color:#888; font-size:0.78rem; margin-top:6px;"></div>
+            </div>
+
+            <div class="form-group">
+                <label>Reason for change (audit log) <span style="color:#c0392b;">*</span></label>
+                <textarea id="editReason" class="form-control" rows="2" required
+                          placeholder="e.g. Updated per revised USP monograph 2026-04"></textarea>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top: 18px;">
+                <button type="button" class="btn btn-secondary" onclick="closeEdit()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save change</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ============ MODAL: ADD CUSTOM CHECKPOINT ============ -->
+<div id="addModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-body" style="max-width: 640px;">
+        <h3 style="margin:0 0 8px;">Add Custom Checkpoint</h3>
+        <p id="addStageName" style="color:#666; font-size: 0.85rem; margin: 0 0 18px;"></p>
+
+        <form method="POST" action="{{ url_for('add_custom_checkpoint') }}">
+            <input type="hidden" id="addStageId" name="stage_id">
+
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label>Checkpoint name <span style="color:#c0392b;">*</span></label>
+                    <input type="text" name="checkpoint_name" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Checkpoint #</label>
+                    <input type="text" name="checkpoint_no" class="form-control" placeholder="C">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Sample size desc</label>
+                    <input type="text" name="sample_size" class="form-control" placeholder="e.g. 10 tablets">
+                </div>
+                <div class="form-group">
+                    <label>n (count)</label>
+                    <input type="number" name="sample_count" class="form-control" value="5" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Unit</label>
+                    <input type="text" name="unit" class="form-control" placeholder="%, mg, N, ...">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label>Tolerance</label>
+                    <input type="text" name="tolerance" class="form-control"
+                           placeholder='e.g. "95.0 - 105.0 %"'>
+                </div>
+                <div class="form-group">
+                    <label>Result type</label>
+                    <select name="result_type" class="form-control">
+                        <option value="numeric">numeric</option>
+                        <option value="passfail">passfail</option>
+                        <option value="text">text</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Defect type</label>
+                    <select name="defect_type" class="form-control">
+                        <option value="">—</option>
+                        <option>Critical</option>
+                        <option>Major</option>
+                        <option>Minor</option>
+                        <option>Informational</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Frequency</label>
+                    <input type="text" name="frequency" class="form-control" placeholder="Per batch, Each lot, ...">
+                </div>
+                <div class="form-group">
+                    <label>Test type</label>
+                    <select name="test_type" class="form-control">
+                        <option value="variable">variable</option>
+                        <option value="attribute">attribute</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Instruction / notes</label>
+                <textarea name="instruction" class="form-control" rows="2"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Reason for addition <span style="color:#c0392b;">*</span></label>
+                <input type="text" name="reason" class="form-control" required
+                       placeholder="e.g. New internal test per deviation DEV-2026-04">
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top: 18px;">
+                <button type="button" class="btn btn-secondary" onclick="closeAdd()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add checkpoint</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ============ MODAL: AUDIT HISTORY ============ -->
+<div id="historyModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-body" style="max-width: 700px;">
+        <h3 style="margin:0 0 8px;">📜 Audit History</h3>
+        <p id="historyCpName" style="color:#666; font-size: 0.85rem; margin: 0 0 18px;"></p>
+        <div id="historyContent">Loading…</div>
+        <div style="display:flex; justify-content:flex-end; margin-top: 18px;">
+            <button type="button" class="btn btn-secondary" onclick="closeHistory()">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.layer-pill {
+    background: #fff; border: 1px solid #d5dce6; color: #555;
+    padding: 6px 14px; border-radius: 18px; font-size: 0.82rem; cursor: pointer;
+    transition: all 0.15s;
+}
+.layer-pill:hover { background: #f1f5fb; }
+.layer-pill.active { background: #0056b3; border-color: #0056b3; color: #fff; }
+
+.layer-section { margin-bottom: 30px; }
+.layer-heading {
+    font-size: 1.05rem; color: #333; margin: 0 0 12px; padding-bottom: 8px;
+    border-bottom: 2px solid #e1e8f0;
+}
+
+.stage-accordion {
+    background: #fff; border: 1px solid #e1e8f0; border-radius: 10px;
+    margin-bottom: 10px; overflow: hidden;
+}
+.stage-accordion summary {
+    padding: 14px 18px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+    font-size: 0.92rem; list-style: none; user-select: none;
+    transition: background 0.15s;
+}
+.stage-accordion summary:hover { background: #f8faff; }
+.stage-accordion summary::-webkit-details-marker { display: none; }
+.stage-accordion summary::before {
+    content: '▸'; color: #888; font-size: 0.8rem; transition: transform 0.15s;
+}
+.stage-accordion[open] summary::before { transform: rotate(90deg); }
+
+.stage-code {
+    background: #0056b3; color: #fff; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 600; font-family: 'SF Mono', Consolas, monospace;
+}
+.stage-name { font-weight: 600; color: #222; }
+.stage-form {
+    background: #f1f5fb; color: #0056b3; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 500;
+}
+.stage-count { color: #888; font-size: 0.78rem; }
+
+.cp-table-wrap { overflow-x: auto; border-top: 1px solid #edf1f7; }
+.cp-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+.cp-table thead {
+    background: #f8faff; border-bottom: 1px solid #dce4ee;
+}
+.cp-table th {
+    text-align: left; padding: 10px 12px; font-weight: 600; color: #555;
+    font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.4px;
+}
+.cp-table td {
+    padding: 10px 12px; border-bottom: 1px solid #eef2f8; vertical-align: top;
+}
+.cp-table tbody tr:hover { background: #fafcff; }
+.cp-no { color: #888; font-family: 'SF Mono', Consolas, monospace; font-size: 0.75rem; }
+.cp-name { font-weight: 500; color: #222; }
+.cp-instruction { color: #7a869a; font-size: 0.75rem; margin-top: 4px; font-style: italic; }
+.cp-bounds {
+    color: #0056b3; font-size: 0.72rem; font-family: 'SF Mono', Consolas, monospace; margin-top: 2px;
+}
+
+.badge-critical { background: #fee; color: #c0392b; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+.badge-major    { background: #fff4e6; color: #d2691e; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+.badge-minor    { background: #e6f2ff; color: #2980b9; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; }
+.badge-info     { background: #eaf7ee; color: #27ae60; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; }
+
+.src-custom { color: #8e44ad; font-size: 0.75rem; font-weight: 500; }
+.src-excel  { color: #888; font-size: 0.75rem; }
+
+.action-btn {
+    background: transparent; border: 1px solid #e1e8f0; border-radius: 6px;
+    padding: 4px 8px; cursor: pointer; font-size: 0.85rem;
+    transition: background 0.15s;
+}
+.action-btn:hover { background: #f1f5fb; }
+.delete-btn:hover { background: #fee; border-color: #fbb; }
+
+.modal-backdrop {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 20, 40, 0.5); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-body {
+    background: #fff; border-radius: 10px; padding: 24px;
+    max-width: 500px; width: 92%; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+</style>
+
 {% endblock %}
 
 {% block scripts %}
-<!-- SheetJS for Excel parsing (client-side, no server upload needed) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
 
-    // ── Toggle upload panel ──────────────────────────────────────────────────
-    const toggleBtn = document.getElementById('toggleUpload');
-    const uploadSection = document.getElementById('uploadSection');
-    if (toggleBtn && uploadSection) {
-        toggleBtn.addEventListener('click', () => {
-            const hidden = uploadSection.style.display === 'none' || uploadSection.style.display === '';
-            uploadSection.style.display = hidden ? 'block' : 'none';
-            toggleBtn.textContent = hidden ? 'Hide Upload' : 'Show Upload';
+    // ── Layer filter pills ──
+    document.querySelectorAll('.layer-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.layer-pill').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const target = btn.dataset.layer;
+            document.querySelectorAll('.layer-section').forEach(sec => {
+                sec.style.display = (target === 'ALL' || sec.dataset.layer === target) ? 'block' : 'none';
+            });
         });
-    }
-
-    // ── Cancel preview ───────────────────────────────────────────────────────
-    const cancelBtn = document.getElementById('cancelPreview');
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => {
-            document.getElementById('previewSection').style.display = 'none';
-            document.getElementById('excelFileInput').value = '';
-        });
-    }
-
-    // ── Column name aliases (flexible matching) ──────────────────────────────
-    const COL_MAP = {
-        no:          ['no', '#', 'num', 'number'],
-        checkpoint:  ['checkpoint', 'parameter', 'test name', 'description', 'item'],
-        sample_size: ['sample size', 'sample', 'qty', 'quantity'],
-        test_method: ['test method', 'method', 'procedure'],
-        tolerance:   ['tolerance', 'specification', 'spec', 'limit', 'acceptance criteria'],
-        pass_fail:   ['pass / fail criterion', 'pass/fail criterion', 'pass fail criterion',
-                      'pass/fail', 'criterion', 'criteria', 'result'],
-        defect_type: ['defect type if fail', 'defect type', 'defect', 'failure type', 'severity'],
-    };
-
-    function findCol(headers, aliases) {
-        const normalized = headers.map(h => (h || '').toString().toLowerCase().trim());
-        for (const alias of aliases) {
-            const idx = normalized.indexOf(alias.toLowerCase());
-            if (idx !== -1) return idx;
-        }
-        // partial match fallback
-        for (const alias of aliases) {
-            const idx = normalized.findIndex(h => h.includes(alias.toLowerCase()));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    }
-
-    // ── Parse Excel on button click ───────────────────────────────────────────
-    const parseBtn = document.getElementById('parseExcelBtn');
-    if (parseBtn) {
-        parseBtn.addEventListener('click', () => {
-            const errorEl = document.getElementById('parseError');
-            errorEl.style.display = 'none';
-
-            const productName = document.getElementById('uploadProductName').value.trim();
-            const form        = document.getElementById('uploadForm').value;
-            const file        = document.getElementById('excelFileInput').files[0];
-
-            if (!productName) { showError('Please enter a Product Name.'); return; }
-            if (!file)        { showError('Please select an Excel file.'); return; }
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const wb   = XLSX.read(e.target.result, { type: 'binary' });
-                    const ws   = wb.Sheets[wb.SheetNames[0]];
-                    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-                    if (data.length < 2) { showError('Sheet appears to be empty.'); return; }
-
-                    // Find header row (first row that contains at least "checkpoint" or "test method")
-                    let headerRowIdx = 0;
-                    for (let i = 0; i < Math.min(5, data.length); i++) {
-                        const rowLower = data[i].map(c => (c || '').toString().toLowerCase());
-                        if (rowLower.some(c => c.includes('checkpoint') || c.includes('test method') || c.includes('parameter'))) {
-                            headerRowIdx = i;
-                            break;
-                        }
-                    }
-
-                    const headers       = data[headerRowIdx];
-                    const colNo         = findCol(headers, COL_MAP.no);
-                    const colCheckpoint = findCol(headers, COL_MAP.checkpoint);
-                    const colSample     = findCol(headers, COL_MAP.sample_size);
-                    const colMethod     = findCol(headers, COL_MAP.test_method);
-                    const colTolerance  = findCol(headers, COL_MAP.tolerance);
-                    const colPassFail   = findCol(headers, COL_MAP.pass_fail);
-                    const colDefect     = findCol(headers, COL_MAP.defect_type);
-
-                    if (colCheckpoint === -1) {
-                        showError('Could not find a "Checkpoint" column. Make sure your header row has a column named Checkpoint (or Parameter, Test Name, etc.).');
-                        return;
-                    }
-
-                    const rows = [];
-                    for (let i = headerRowIdx + 1; i < data.length; i++) {
-                        const row = data[i];
-                        const checkpoint = (row[colCheckpoint] || '').toString().trim();
-                        if (!checkpoint) continue; // skip blank rows
-                        rows.push({
-                            no:                  colNo        !== -1 ? (row[colNo]        || '').toString().trim() : String(rows.length + 1),
-                            checkpoint,
-                            sample_size:         colSample    !== -1 ? (row[colSample]    || '').toString().trim() : '',
-                            test_method:         colMethod    !== -1 ? (row[colMethod]    || '').toString().trim() : '',
-                            tolerance:           colTolerance !== -1 ? (row[colTolerance] || '').toString().trim() : '',
-                            pass_fail_criterion: colPassFail  !== -1 ? (row[colPassFail]  || '').toString().trim() : '',
-                            defect_type:         colDefect    !== -1 ? (row[colDefect]    || '').toString().trim() : '',
-                        });
-                    }
-
-                    if (rows.length === 0) { showError('No data rows found after the header.'); return; }
-
-                    renderPreview(rows, productName, form);
-
-                } catch (err) {
-                    showError('Failed to parse file: ' + err.message);
-                }
-            };
-            reader.readAsBinaryString(file);
-        });
-    }
-
-    function renderPreview(rows, productName, form) {
-        const tbody = document.getElementById('previewTableBody');
-        tbody.innerHTML = '';
-        rows.forEach(r => {
-            const tr = document.createElement('tr');
-            tr.style.borderBottom = '1px solid #eef4fb';
-            [r.no, r.checkpoint, r.sample_size, r.test_method, r.tolerance, r.pass_fail_criterion, r.defect_type]
-                .forEach(val => {
-                    const td = document.createElement('td');
-                    td.style.cssText = 'padding: 7px 10px; vertical-align:top;';
-                    td.textContent = val;
-                    tr.appendChild(td);
-                });
-            tbody.appendChild(tr);
-        });
-
-        document.getElementById('previewCount').textContent  = rows.length;
-        document.getElementById('previewCount2').textContent = rows.length;
-        document.getElementById('previewProductLabel').textContent = productName;
-
-        // Populate hidden inputs for form POST
-        document.getElementById('hiddenProductName').value = productName;
-        document.getElementById('hiddenForm').value        = form;
-        document.getElementById('hiddenRowsJson').value    = JSON.stringify(rows);
-
-        document.getElementById('previewSection').style.display = 'block';
-    }
-
-    function showError(msg) {
-        const el = document.getElementById('parseError');
-        el.textContent = '⚠ ' + msg;
-        el.style.display = 'block';
-    }
-
-    // ── Specs table filtering ────────────────────────────────────────────────
-    const table = document.getElementById('specsTable');
-    if (!table) return;
-
-    const rows     = Array.from(table.querySelectorAll('tbody tr'));
-    const products = new Set();
-    rows.forEach(row => products.add(row.cells[1].innerText.trim())); // col 1 = Product
-
-    const select = document.getElementById('productFilter');
-    while (select.options.length > 1) select.remove(1);
-    products.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p; opt.textContent = p;
-        select.appendChild(opt);
     });
 
-    select.addEventListener('change', e => {
-        const val = e.target.value;
-        rows.forEach(row => {
-            row.style.display = (val === 'All' || row.cells[1].innerText.trim() === val) ? '' : 'none';
+    // ── Live search ──
+    const searchInput = document.getElementById('libSearch');
+    searchInput.addEventListener('input', (e) => {
+        const q = e.target.value.toLowerCase().trim();
+        document.querySelectorAll('.cp-row').forEach(row => {
+            const hay = row.dataset.search || '';
+            row.style.display = (!q || hay.includes(q)) ? '' : 'none';
+        });
+        // Open accordions that have visible rows
+        document.querySelectorAll('.stage-accordion').forEach(acc => {
+            if (q) {
+                const anyVisible = Array.from(acc.querySelectorAll('.cp-row')).some(r => r.style.display !== 'none');
+                if (anyVisible) acc.setAttribute('open', '');
+            }
+        });
+    });
+
+    // ── Edit modal ──
+    const editModal = document.getElementById('editModal');
+    const editCpId = document.getElementById('editCpId');
+    const editCpName = document.getElementById('editCpName');
+    const editField = document.getElementById('editField');
+    const editValue = document.getElementById('editValue');
+    const editReason = document.getElementById('editReason');
+    const editHelp = document.getElementById('editHelpText');
+
+    const FIELD_HELP = {
+        tolerance: 'Free-text tolerance. The numeric bounds below will be auto-reparsed.',
+        sample_size: 'Descriptive text of the sample amount (e.g. "10 tablets").',
+        sample_count: 'Integer — how many individual readings are taken per batch.',
+        unit: 'Unit of measure, e.g. %, mg, N, cm.',
+        tol_min: 'Numeric lower bound. Enter blank to clear.',
+        tol_max: 'Numeric upper bound. Enter blank to clear.',
+        instruction: 'Operator instruction / method note.',
+        frequency: 'How often the test is performed (e.g. "Per batch").',
+        defect_type: 'One of: Critical, Major, Minor, Informational',
+        test_type: 'variable = measured, attribute = counted/pass-fail.',
+        result_type: 'numeric / passfail / text — governs QC entry input type.',
+    };
+
+    editField.addEventListener('change', () => {
+        editHelp.textContent = FIELD_HELP[editField.value] || '';
+    });
+
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const row = btn.closest('.cp-row');
+            editCpId.value = row.dataset.cpId;
+            editCpName.textContent = row.dataset.cpName;
+            editField.value = 'tolerance';
+            editValue.value = '';
+            editReason.value = '';
+            editHelp.textContent = FIELD_HELP.tolerance;
+            editModal.style.display = 'flex';
+        });
+    });
+
+    window.closeEdit = () => { editModal.style.display = 'none'; };
+
+    document.getElementById('editForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData();
+        fd.append('field', editField.value);
+        fd.append('value', editValue.value);
+        fd.append('reason', editReason.value);
+        const res = await fetch(`/portal/specs/edit/${editCpId.value}`, { method: 'POST', body: fd });
+        const json = await res.json();
+        if (json.ok) {
+            closeEdit();
+            location.reload();
+        } else {
+            alert('Failed: ' + (json.error || 'Unknown error'));
+        }
+    });
+
+    // ── Add custom modal ──
+    const addModal = document.getElementById('addModal');
+    document.querySelectorAll('.add-cp-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('addStageId').value = btn.dataset.stageId;
+            document.getElementById('addStageName').textContent = 'Stage: ' + btn.dataset.stageName;
+            addModal.style.display = 'flex';
+        });
+    });
+    window.closeAdd = () => { addModal.style.display = 'none'; };
+
+    // ── History modal ──
+    const historyModal = document.getElementById('historyModal');
+    const historyContent = document.getElementById('historyContent');
+    const historyCpName = document.getElementById('historyCpName');
+
+    document.querySelectorAll('.history-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const row = btn.closest('.cp-row');
+            historyCpName.textContent = row.dataset.cpName;
+            historyContent.innerHTML = '<em>Loading…</em>';
+            historyModal.style.display = 'flex';
+            const res = await fetch(`/api/checkpoint/${row.dataset.cpId}/audit`);
+            const rows = await res.json();
+            if (!rows.length) {
+                historyContent.innerHTML = '<p style="color:#888;">No changes recorded yet.</p>';
+                return;
+            }
+            historyContent.innerHTML = `
+                <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+                    <thead style="background:#f8faff;">
+                      <tr>
+                        <th style="text-align:left; padding:8px 10px;">When</th>
+                        <th style="text-align:left; padding:8px 10px;">Action</th>
+                        <th style="text-align:left; padding:8px 10px;">Field</th>
+                        <th style="text-align:left; padding:8px 10px;">Before → After</th>
+                        <th style="text-align:left; padding:8px 10px;">By</th>
+                        <th style="text-align:left; padding:8px 10px;">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                    ${rows.map(r => `
+                        <tr style="border-top:1px solid #eef2f8;">
+                          <td style="padding:8px 10px; color:#666;">${r.changed_at || ''}</td>
+                          <td style="padding:8px 10px;"><code>${r.action}</code></td>
+                          <td style="padding:8px 10px; color:#0056b3;">${r.field_changed || '—'}</td>
+                          <td style="padding:8px 10px;">
+                            ${r.old_value ? `<s style="color:#c0392b;">${r.old_value}</s> → ` : ''}<strong>${r.new_value || ''}</strong>
+                          </td>
+                          <td style="padding:8px 10px; color:#444;">${r.changed_by}</td>
+                          <td style="padding:8px 10px; color:#666;">${r.reason || ''}</td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            `;
+        });
+    });
+    window.closeHistory = () => { historyModal.style.display = 'none'; };
+
+    // Close modals on backdrop click
+    [editModal, addModal, historyModal].forEach(m => {
+        m.addEventListener('click', (e) => {
+            if (e.target === m) m.style.display = 'none';
         });
     });
 });
