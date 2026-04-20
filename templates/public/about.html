@@ -2,69 +2,128 @@
 {% block title %}About Us — Atlas Pharma{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="page-header">
-        <h1>🏢 About Atlas Pharma</h1>
-        <p>Delivering quality healthcare products with integrity and innovation.</p>
+<!-- ── About Hero ─────────────────────────────────────────────────── -->
+<section class="about-hero">
+    <div class="container">
+        <div class="section-eyebrow" style="background: rgba(255,255,255,0.15); color: #bae6fd;">About Atlas Pharma</div>
+        <h1>Quality, by design — not by accident.</h1>
+        <p>Atlas Pharma manufactures safe, effective, and accessible pharmaceutical products for communities across Türkiye and beyond. We combine modern manufacturing technology with rigorous quality management so every batch meets the highest pharmacopeial standards.</p>
     </div>
+</section>
 
-    <!-- Mission -->
-    <div class="mission-block">
-        <h3>Our Mission</h3>
-        <p>Atlas Pharma is dedicated to manufacturing safe, effective, and accessible pharmaceutical products for communities across Turkey and beyond. We combine modern manufacturing technology with rigorous quality management to ensure every product meets the highest pharmacopeial standards.</p>
+<!-- ── Mission + stat highlight ───────────────────────────────────── -->
+<section class="section-block bg-white">
+    <div class="container about-mission-grid">
+        <div>
+            <div class="section-eyebrow">Our Mission</div>
+            <h2 class="section-title" style="text-align:left;">Medicines people can rely on — every batch, every time.</h2>
+            <p style="color:#555; line-height:1.7; font-size:1.05rem;">
+                From raw API intake to the pharmacy shelf, every decision at Atlas is anchored to patient safety.
+                We believe quality is not an end-of-line check — it's a discipline woven into every stage of production.
+            </p>
+        </div>
+        <div class="mission-stats">
+            <div class="ms-item">
+                <div class="ms-val">30+</div>
+                <div class="ms-label">Years of manufacturing experience</div>
+            </div>
+            <div class="ms-item">
+                <div class="ms-val">5</div>
+                <div class="ms-label">Accredited testing partners</div>
+            </div>
+            <div class="ms-item">
+                <div class="ms-val">3</div>
+                <div class="ms-label">QC layers per batch (IQC · IPQC · FQC)</div>
+            </div>
+        </div>
     </div>
+</section>
 
-    <!-- Core Values -->
-    <h2 class="section-title">Our Core Values</h2>
-    <div class="values-grid mt-20">
-        <div class="value-card">
-            <div class="icon">🛡️</div>
-            <h4>Patient Safety</h4>
-            <p>Safety is non-negotiable. Every decision is made with the patient in mind.</p>
-        </div>
-        <div class="value-card">
-            <div class="icon">✅</div>
-            <h4>Quality First</h4>
-            <p>We exceed regulatory requirements through continuous improvement and innovation.</p>
-        </div>
-        <div class="value-card">
-            <div class="icon">🤝</div>
-            <h4>Integrity</h4>
-            <p>Transparency and honesty guide our relationships with partners and regulators.</p>
-        </div>
-        <div class="value-card">
-            <div class="icon">🌱</div>
-            <h4>Sustainability</h4>
-            <p>We are committed to environmentally responsible manufacturing practices.</p>
+<!-- ── Core Values ────────────────────────────────────────────────── -->
+<section class="section-block bg-light">
+    <div class="container">
+        <div class="section-eyebrow" style="display:block; text-align:center;">What Drives Us</div>
+        <h2 class="section-title">Our Core Values</h2>
+        <p class="section-subtitle">Four principles that shape every decision we make.</p>
+        <div class="values-grid-v2">
+            <div class="value-card-v2 vc-safety">
+                <div class="vc-icon">🛡️</div>
+                <h4>Patient Safety</h4>
+                <p>Safety is non-negotiable. Every decision is made with the patient in mind.</p>
+            </div>
+            <div class="value-card-v2 vc-quality">
+                <div class="vc-icon">✅</div>
+                <h4>Quality First</h4>
+                <p>We exceed regulatory requirements through continuous improvement and innovation.</p>
+            </div>
+            <div class="value-card-v2 vc-integrity">
+                <div class="vc-icon">🤝</div>
+                <h4>Integrity</h4>
+                <p>Transparency and honesty guide our relationships with partners and regulators.</p>
+            </div>
+            <div class="value-card-v2 vc-sustain">
+                <div class="vc-icon">🌱</div>
+                <h4>Sustainability</h4>
+                <p>We are committed to environmentally responsible manufacturing practices.</p>
+            </div>
         </div>
     </div>
+</section>
 
-    <!-- QMS Block -->
-    <div class="stats-bar text-center mb-40">
-        <h2 class="section-title" style="margin-bottom: 16px;">Quality Management System</h2>
-        <p style="max-width: 700px; margin: 0 auto; font-size: 0.95rem; line-height: 1.8;">
-            Our electronic QMS (eQMS) represents our commitment to digitising and automating the quality lifecycle.
-            From AI-powered complaint triage to real-time CAPA tracking, every quality event is captured, analysed,
-            and resolved with full audit trail visibility.
-        </p>
+<!-- ── Quality Management System ──────────────────────────────────── -->
+<section id="quality" class="section-block bg-white">
+    <div class="container">
+        <div class="qms-feature">
+            <div class="qms-text">
+                <div class="section-eyebrow">The Atlas QMS</div>
+                <h2 class="section-title" style="text-align:left;">A digital quality system, end-to-end.</h2>
+                <p style="color:#555; line-height:1.7; margin-bottom: 20px;">
+                    Our electronic QMS (eQMS) digitises every step of the quality lifecycle — from AI-powered
+                    complaint triage to real-time CAPA tracking, SPC dashboards, and external lab partner coordination.
+                    Every quality event is captured, analysed, and resolved with full audit-trail visibility.
+                </p>
+                <ul class="quality-list">
+                    <li><strong>Stage-based batch tracking —</strong> IQC, IPQC, and FQC gates with electronic sign-off.</li>
+                    <li><strong>Statistical Process Control —</strong> Live control charts with automatic out-of-spec flagging.</li>
+                    <li><strong>External lab tracker —</strong> Manage FQC samples sent to accredited partners in real time.</li>
+                    <li><strong>CAPA workflow —</strong> Root-cause analysis and preventive-action tracking for every complaint.</li>
+                </ul>
+            </div>
+            <div class="qms-visual">
+                <div class="qms-pipeline">
+                    <div class="pipe-step"><div class="ps-dot"></div><div><strong>IQC</strong><span>Incoming materials</span></div></div>
+                    <div class="pipe-line"></div>
+                    <div class="pipe-step"><div class="ps-dot"></div><div><strong>IPQC</strong><span>In-process checks</span></div></div>
+                    <div class="pipe-line"></div>
+                    <div class="pipe-step"><div class="ps-dot"></div><div><strong>FQC</strong><span>Finished product</span></div></div>
+                    <div class="pipe-line"></div>
+                    <div class="pipe-step pipe-done"><div class="ps-dot"></div><div><strong>Release</strong><span>Pharmacy shelf</span></div></div>
+                </div>
+            </div>
+        </div>
     </div>
+</section>
 
-    <!-- Team -->
-    <h2 class="section-title">Quality Team</h2>
-    <p class="section-subtitle">The people behind the quality promise.</p>
-    <div class="team-grid">
-        <div class="team-card">
-            <div class="team-avatar">M</div>
-            <h3>Maimouna Diabi</h3>
-            <div class="team-role">Quality Manager — Product Specs</div>
-            <p>Oversees physical and functional product specifications for all Paracetamol dosage forms. Ensures compliance with USP monographs and ICH stability guidelines.</p>
-        </div>
-        <div class="team-card">
-            <div class="team-avatar">B</div>
-            <h3>Büşra</h3>
-            <div class="team-role">Quality Manager — Lab Partners</div>
-            <p>Manages relationships with external testing laboratories and regulatory bodies (TSE, TÜBİTAK, TİTCK). Coordinates third-party audits and ISO/ISTA compliance.</p>
+<!-- ── Team ───────────────────────────────────────────────────────── -->
+<section id="team" class="section-block bg-light">
+    <div class="container">
+        <div class="section-eyebrow" style="display:block; text-align:center;">People Behind The Promise</div>
+        <h2 class="section-title">Quality Team</h2>
+        <p class="section-subtitle">The individuals who own the standards, every day.</p>
+        <div class="team-grid-v2">
+            <div class="team-card-v2">
+                <div class="tc-avatar" style="background: linear-gradient(135deg, #3b82f6, #1e40af);">M</div>
+                <h3>Maimouna Diabi</h3>
+                <div class="tc-role">Quality Manager · Product Specs</div>
+                <p>Oversees physical and functional product specifications for all Paracetamol dosage forms. Ensures compliance with USP monographs and ICH stability guidelines.</p>
+            </div>
+            <div class="team-card-v2">
+                <div class="tc-avatar" style="background: linear-gradient(135deg, #a855f7, #6d28d9);">B</div>
+                <h3>Büşra</h3>
+                <div class="tc-role">Quality Manager · Lab Partners</div>
+                <p>Manages relationships with external testing laboratories and regulatory bodies (TSE, TÜBİTAK, TİTCK). Coordinates third-party audits and ISO/ISTA compliance.</p>
+            </div>
         </div>
     </div>
-</div>
+</section>
 {% endblock %}

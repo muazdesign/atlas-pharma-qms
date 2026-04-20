@@ -2,29 +2,53 @@
 {% block title %}Staff Login — Atlas Pharma{% endblock %}
 
 {% block content %}
-<div class="login-wrapper">
-    <div class="login-card">
-        <div class="login-header">
-            <div class="icon">🔐</div>
-            <h2>Staff Portal</h2>
-            <p>Internal access for authorized personnel only.</p>
+<div class="login-split">
+    <!-- Left: brand panel -->
+    <div class="login-brand">
+        <div class="lb-orbs">
+            <span class="orb orb-1"></span>
+            <span class="orb orb-2"></span>
         </div>
-        <div class="login-body">
+        <div class="lb-content">
+            <div class="lb-eyebrow">Atlas QMS · Internal Portal</div>
+            <h1>Quality starts with the people who own it.</h1>
+            <p>Sign in to access the Atlas Pharma Quality Management System — batch tracking, SPC dashboards, CAPA workflows, and GMP tools.</p>
+            <ul class="lb-features">
+                <li><span>🧪</span> Live batch and QC oversight</li>
+                <li><span>📊</span> SPC dashboards with control limits</li>
+                <li><span>🏛️</span> External lab partner tracking</li>
+                <li><span>📋</span> GMP-compliant audit trails</li>
+            </ul>
+        </div>
+        <div class="lb-footnote">
+            🔒 Protected area — authorized personnel only.
+        </div>
+    </div>
+
+    <!-- Right: form panel -->
+    <div class="login-form-side">
+        <div class="login-card-v2">
+            <div class="login-header-v2">
+                <h2>Welcome back</h2>
+                <p>Sign in to continue to the Atlas portal.</p>
+            </div>
             <form method="POST" action="/login">
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" class="form-control" id="username" name="username" placeholder="Enter your username" required autofocus>
+                    <input type="text" class="form-control" id="username" name="username"
+                           placeholder="e.g. m.diabi" required autofocus>
                 </div>
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" required>
+                    <input type="password" class="form-control" id="password" name="password"
+                           placeholder="••••••••" required>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block" style="margin-top: 10px;">🔑 Sign In</button>
+                <button type="submit" class="btn btn-primary btn-block" style="margin-top: 6px;">Sign In →</button>
             </form>
-        </div>
-        <div class="login-footer">
-            This portal is restricted to Atlas Pharma employees.<br>
-            If you need access, contact your system administrator.
+            <div class="login-footer-v2">
+                Need access? Contact your system administrator at
+                <a href="mailto:it@atlaspharma.com.tr">it@atlaspharma.com.tr</a>
+            </div>
         </div>
     </div>
 </div>

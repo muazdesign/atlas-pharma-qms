@@ -48,10 +48,57 @@
     </main>
 
     <!-- ── Footer ───────────────────────────────────────────────────── -->
-    <footer class="footer">
-        <p>© 2026 Atlas Pharma - All rights reserved. </p>
-        <p class="footer-sub">Beykoz University, İstanbul, Türkiye &nbsp;|&nbsp; quality@atlaspharma.com.tr
-            &nbsp;|&nbsp; +90 (537) 642 36 26</p>
+    <footer class="footer-v2">
+        <div class="footer-main">
+            <div class="footer-brand">
+                <div class="footer-logo">
+                    <img src="{{ url_for('static', filename='images/atlas_logo.svg') }}" alt="Atlas Pharma">
+                    <span>Atlas Pharma</span>
+                </div>
+                <p class="footer-about">
+                    Turkish pharmaceutical manufacturer delivering trusted medicines with full GMP compliance and end-to-end batch traceability.
+                </p>
+                <div class="footer-badges">
+                    <span class="fb">ISO 9001</span>
+                    <span class="fb">GMP</span>
+                    <span class="fb">TİTCK</span>
+                </div>
+            </div>
+            <div class="footer-col">
+                <h4>Products</h4>
+                <a href="/catalog">Full Catalog</a>
+                <a href="/catalog#pain">Pain Relief</a>
+                <a href="/catalog#pediatrics">Pediatrics</a>
+                <a href="/catalog#wellness">Daily Wellness</a>
+            </div>
+            <div class="footer-col">
+                <h4>Company</h4>
+                <a href="/about">About Us</a>
+                <a href="/about#quality">Quality System</a>
+                <a href="/about#team">Our Team</a>
+                <a href="/contact">Contact</a>
+            </div>
+            <div class="footer-col">
+                <h4>Resources</h4>
+                <a href="/feedback">Submit Feedback</a>
+                <a href="/contact">Report an Issue</a>
+                <a href="/login">Staff Portal</a>
+            </div>
+            <div class="footer-col">
+                <h4>Get in Touch</h4>
+                <p class="fc-line">📍 Beykoz University<br>&nbsp;&nbsp;&nbsp;İstanbul, Türkiye</p>
+                <p class="fc-line">📧 quality@atlaspharma.com.tr</p>
+                <p class="fc-line">📞 +90 (537) 642 36 26</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <div>© 2026 Atlas Pharma. All rights reserved.</div>
+            <div class="footer-legal">
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+                <a href="#">Pharmacovigilance</a>
+            </div>
+        </div>
     </footer>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>

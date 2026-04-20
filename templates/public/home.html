@@ -4,12 +4,54 @@
 {% block content %}
 <!-- ── Full Page Hero ──────────────────────────────────────────────────────────── -->
 <section class="hero-full">
+    <div class="hero-orbs">
+        <span class="orb orb-1"></span>
+        <span class="orb orb-2"></span>
+        <span class="orb orb-3"></span>
+    </div>
     <div class="hero-full-content">
-        <h1>Atlas Pharma</h1>
-        <p class="hero-tagline">Committed to manufacturing high-quality pharmaceutical products with uncompromising standards in safety, efficacy, and compliance.</p>
+        <div class="hero-eyebrow">ISO 9001 · GMP Certified · Est. in Türkiye</div>
+        <h1>Medicine, engineered<br><span class="gradient-text">for trust.</span></h1>
+        <p class="hero-tagline">Pharmaceutical products manufactured under uncompromising GMP standards — with full traceability from raw API to pharmacy shelf.</p>
         <div class="hero-actions">
-            <a href="/catalog" class="btn btn-primary">💊 Explore Our Catalog</a>
-            <a href="#quality" class="btn btn-secondary">🔬 Our Quality Commitment</a>
+            <a href="/catalog" class="btn btn-primary">Explore Our Catalog →</a>
+            <a href="#quality" class="btn btn-secondary">Our Quality Commitment</a>
+        </div>
+        <div class="hero-trust-row">
+            <span>🇹🇷 Registered with TİTCK</span>
+            <span>🔬 Tested by TÜBİTAK MAM</span>
+            <span>📜 ISO 9001:2015</span>
+        </div>
+    </div>
+    <a href="#stats" class="hero-scroll-hint" aria-label="Scroll down">
+        <span></span>
+    </a>
+</section>
+
+<!-- ── Stats Band ───────────────────────────────────────────────────── -->
+<section id="stats" class="stats-band">
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-value" data-count="30">30+</div>
+                <div class="stat-label">Years of Excellence</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" data-count="120">120+</div>
+                <div class="stat-label">Active SKUs</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" data-count="5">5</div>
+                <div class="stat-label">Accredited Partners</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">99.6<span class="stat-unit">%</span></div>
+                <div class="stat-label">Batch Pass Rate</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">3</div>
+                <div class="stat-label">QC Layers · IQC · IPQC · FQC</div>
+            </div>
         </div>
     </div>
 </section>
@@ -20,23 +62,38 @@
         <h2 class="section-title">Therapeutic Areas</h2>
         <p class="section-subtitle">Delivering targeted healthcare solutions across key medical fields.</p>
         <div class="card-grid-3">
-            <div class="ta-card card text-center">
-                <img src="https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=600&q=80" alt="Pain Relief" class="ta-img">
-                <div class="card-icon">⚡</div>
-                <h3>Pain Relief</h3>
-                <p>Advanced formulations designed to provide rapid, effective, and safe relief from acute and chronic pain conditions.</p>
+            <div class="ta-card-v2 ta-pain">
+                <div class="ta-header">
+                    <svg class="ta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7v8l10-12h-7z"/></svg>
+                    <span class="ta-tag">Analgesics</span>
+                </div>
+                <div class="ta-body">
+                    <h3>Pain Relief</h3>
+                    <p>Advanced formulations engineered for rapid, effective, and safe relief from acute and chronic pain conditions.</p>
+                    <a href="/catalog" class="ta-link">Browse products →</a>
+                </div>
             </div>
-            <div class="ta-card card text-center">
-                <img src="https://images.unsplash.com/photo-1516570161787-2faa7ea11bd9?auto=format&fit=crop&w=600&q=80" alt="Pediatrics" class="ta-img">
-                <div class="card-icon">👼</div>
-                <h3>Pediatrics</h3>
-                <p>Gentle and precision-dosed treatments tailored specifically for the safety and well-being of infants and children.</p>
+            <div class="ta-card-v2 ta-pediatrics">
+                <div class="ta-header">
+                    <svg class="ta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span class="ta-tag">Pediatric</span>
+                </div>
+                <div class="ta-body">
+                    <h3>Pediatrics</h3>
+                    <p>Gentle, precision-dosed treatments tailored specifically for the safety and well-being of infants and children.</p>
+                    <a href="/catalog" class="ta-link">Browse products →</a>
+                </div>
             </div>
-            <div class="ta-card card text-center">
-                <img src="https://images.unsplash.com/photo-1494390248081-4e521a5940db?auto=format&fit=crop&w=600&q=80" alt="Daily Wellness" class="ta-img">
-                <div class="card-icon">🌿</div>
-                <h3>Daily Wellness</h3>
-                <p>Vitamins, supplements, and immune boosters manufactured to the highest clinical standards for everyday health.</p>
+            <div class="ta-card-v2 ta-wellness">
+                <div class="ta-header">
+                    <svg class="ta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a9 9 0 0 0 0 18 9 9 0 0 0 0-18z"/><path d="M12 7v5l3 2"/></svg>
+                    <span class="ta-tag">Daily Care</span>
+                </div>
+                <div class="ta-body">
+                    <h3>Daily Wellness</h3>
+                    <p>Vitamins, supplements, and immune boosters manufactured to the highest clinical standards for everyday health.</p>
+                    <a href="/catalog" class="ta-link">Browse products →</a>
+                </div>
             </div>
         </div>
     </div>
@@ -47,12 +104,13 @@
     <div class="container">
         <div class="quality-grid">
             <div class="quality-text">
+                <div class="section-eyebrow">Our Commitment</div>
                 <h2 class="section-title" style="text-align:left;">Uncompromising Quality & Trust</h2>
-                <p class="section-subtitle" style="text-align:left; margin-bottom: 24px;">Excellence isn't just an option—it's our absolute standard.</p>
+                <p class="section-subtitle" style="text-align:left; margin-bottom: 24px;">Excellence isn't an option — it's our absolute standard.</p>
                 <ul class="quality-list">
-                    <li><strong>🏭 Strict GMP Guidelines:</strong> Every facility operates under the rigorous Good Manufacturing Practices (GMP) to ensure consistency and safety.</li>
-                    <li><strong>🔬 Absolute Safety Standards:</strong> Multi-stage pharmacopeial testing for purity, dissolution, and assay accuracy before any batch release.</li>
-                    <li><strong>📈 Full Batch Traceability:</strong> Integrated tracking from raw active pharmaceutical ingredients (API) to the finished dosage form on the pharmacy shelf.</li>
+                    <li><strong>Strict GMP Guidelines —</strong> Every facility operates under rigorous Good Manufacturing Practices to ensure consistency and safety.</li>
+                    <li><strong>Absolute Safety Standards —</strong> Multi-stage pharmacopeial testing for purity, dissolution, and assay accuracy before any batch release.</li>
+                    <li><strong>Full Batch Traceability —</strong> Integrated tracking from raw APIs to the finished dosage form on the pharmacy shelf.</li>
                 </ul>
                 <div class="mt-20">
                     <a href="/about" class="btn btn-secondary">Learn About Our Facilities</a>
@@ -60,7 +118,25 @@
             </div>
             <div class="quality-image">
                 <img src="https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?auto=format&fit=crop&w=800&q=80" alt="Laboratory Quality Control" class="rounded-image shadow-lg">
+                <div class="quality-badge">
+                    <div class="qb-big">ISO</div>
+                    <div class="qb-small">9001:2015</div>
+                </div>
             </div>
+        </div>
+    </div>
+</section>
+
+<!-- ── CTA band ─────────────────────────────────────────────────────── -->
+<section class="cta-band">
+    <div class="container cta-inner">
+        <div>
+            <h2>Questions about a product or batch?</h2>
+            <p>Our quality team responds to every inquiry within one business day.</p>
+        </div>
+        <div class="cta-actions">
+            <a href="/feedback" class="btn btn-primary">Submit Feedback</a>
+            <a href="/contact" class="btn btn-secondary">Contact Us</a>
         </div>
     </div>
 </section>
