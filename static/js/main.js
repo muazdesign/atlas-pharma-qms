@@ -1,18 +1,31 @@
 // Atlas Pharma QMS — Client-side JavaScript
 
 document.addEventListener('DOMContentLoaded', () => {
-    // ── Tab Switching ────────────────────────────────────────────────────
+    // ── Tab Switching (with URL hash persistence) ───────────────────────
+    const activateTab = (tabBtn) => {
+        const group = tabBtn.closest('.tabs-wrapper');
+        if (!group) return;
+        group.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        group.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        tabBtn.classList.add('active');
+        const panel = group.querySelector(`#${tabBtn.dataset.tab}`);
+        if (panel) panel.classList.add('active');
+    };
+
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
-            const group = tab.closest('.tabs-wrapper');
-            if (!group) return;
-            group.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            group.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-            tab.classList.add('active');
-            const panel = group.querySelector(`#${tab.dataset.tab}`);
-            if (panel) panel.classList.add('active');
+            activateTab(tab);
+            // Persist in URL hash so reloads restore the tab
+            history.replaceState(null, '', '#' + tab.dataset.tab);
         });
     });
+
+    // On page load, restore tab from URL hash if present
+    if (window.location.hash) {
+        const target = window.location.hash.slice(1);
+        const tabBtn = document.querySelector(`.tab[data-tab="${target}"]`);
+        if (tabBtn) activateTab(tabBtn);
+    }
 
     // ── Auto-dismiss flash messages ──────────────────────────────────────
     document.querySelectorAll('.flash-msg').forEach(msg => {

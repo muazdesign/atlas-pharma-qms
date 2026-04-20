@@ -278,6 +278,36 @@ def _migrate_add_columns(conn):
     _add_column_if_missing(conn, 'stage_checkpoints', 'updated_by', 'TEXT')
     _add_column_if_missing(conn, 'batch_records', 'sample_number', 'INTEGER DEFAULT 1')
 
+    # External lab testing tracker (3rd party FQC testing sent to institutional partners)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS external_lab_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_code TEXT UNIQUE NOT NULL,
+            batch_id INTEGER NOT NULL,
+            partner_id INTEGER NOT NULL,
+            test_type TEXT NOT NULL,
+            sample_qty TEXT DEFAULT '',
+            sample_sent_date TEXT,
+            expected_return_date TEXT,
+            tracking_ref TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'Draft'
+                CHECK(status IN ('Draft','Sample Shipped','In Testing','Results Received','Closed','Cancelled')),
+            result TEXT CHECK(result IN ('Pass','Fail','Pending') OR result IS NULL),
+            result_doc_url TEXT DEFAULT '',
+            cost REAL,
+            notes TEXT DEFAULT '',
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP,
+            FOREIGN KEY (batch_id) REFERENCES batches(id),
+            FOREIGN KEY (partner_id) REFERENCES partners_directory(id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_elr_batch ON external_lab_requests(batch_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_elr_partner ON external_lab_requests(partner_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_elr_status ON external_lab_requests(status)")
+
     # Audit log for checkpoint library edits (GMP traceability)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stage_checkpoints_audit (
@@ -1854,6 +1884,196 @@ def get_checkpoint_audit_log(checkpoint_id):
            WHERE checkpoint_id = ?
            ORDER BY changed_at DESC""",
         (checkpoint_id,)
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+# ===========================================================================
+# External Lab Testing Requests (3rd party partner tracker)
+# ===========================================================================
+
+LAB_REQUEST_STATUSES = ('Draft', 'Sample Shipped', 'In Testing', 'Results Received', 'Closed', 'Cancelled')
+LAB_REQUEST_OPEN_STATUSES = ('Draft', 'Sample Shipped', 'In Testing', 'Results Received')
+
+
+def _next_lab_request_code(conn):
+    from datetime import datetime
+    year = datetime.now().year
+    prefix = f"ELR-{year}-"
+    row = conn.execute(
+        "SELECT request_code FROM external_lab_requests WHERE request_code LIKE ? ORDER BY id DESC LIMIT 1",
+        (prefix + '%',)
+    ).fetchone()
+    n = 1
+    if row:
+        try:
+            n = int(row['request_code'].split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            n = 1
+    return f"{prefix}{n:03d}"
+
+
+def insert_lab_request(batch_id, partner_id, test_type, created_by,
+                       sample_qty='', sample_sent_date=None, expected_return_date=None,
+                       tracking_ref='', cost=None, notes=''):
+    conn = get_connection()
+    try:
+        code = _next_lab_request_code(conn)
+        status = 'Sample Shipped' if sample_sent_date else 'Draft'
+        conn.execute(
+            """INSERT INTO external_lab_requests
+               (request_code, batch_id, partner_id, test_type, sample_qty,
+                sample_sent_date, expected_return_date, tracking_ref, status, result,
+                cost, notes, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?)""",
+            (code, batch_id, partner_id, test_type, sample_qty,
+             sample_sent_date, expected_return_date, tracking_ref, status,
+             cost, notes, created_by)
+        )
+        conn.commit()
+        return code
+    finally:
+        conn.close()
+
+
+def get_all_lab_requests(partner_id=None, batch_id=None, status=None, open_only=False):
+    conn = get_connection()
+    q = """SELECT r.*,
+                  b.batch_number, p.product_name,
+                  pd.institution_name as partner_name, pd.type as partner_type
+           FROM external_lab_requests r
+           JOIN batches b ON r.batch_id = b.id
+           JOIN products p ON b.product_id = p.id
+           JOIN partners_directory pd ON r.partner_id = pd.id
+           WHERE 1=1"""
+    params = []
+    if partner_id:
+        q += " AND r.partner_id = ?"
+        params.append(partner_id)
+    if batch_id:
+        q += " AND r.batch_id = ?"
+        params.append(batch_id)
+    if status:
+        q += " AND r.status = ?"
+        params.append(status)
+    if open_only:
+        q += " AND r.status IN ('Draft','Sample Shipped','In Testing','Results Received')"
+    q += " ORDER BY r.created_at DESC"
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return rows
+
+
+def get_lab_request(request_id):
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT r.*, b.batch_number, p.product_name,
+                  pd.institution_name as partner_name, pd.type as partner_type,
+                  pd.standards as partner_standards
+           FROM external_lab_requests r
+           JOIN batches b ON r.batch_id = b.id
+           JOIN products p ON b.product_id = p.id
+           JOIN partners_directory pd ON r.partner_id = pd.id
+           WHERE r.id = ?""",
+        (request_id,)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def update_lab_request_status(request_id, status, user, tracking_ref=None, sample_sent_date=None):
+    if status not in LAB_REQUEST_STATUSES:
+        return False, f"Invalid status: {status}"
+    conn = get_connection()
+    try:
+        sets = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
+        params = [status]
+        if tracking_ref is not None:
+            sets.append("tracking_ref = ?")
+            params.append(tracking_ref)
+        if sample_sent_date is not None:
+            sets.append("sample_sent_date = ?")
+            params.append(sample_sent_date)
+        if status in ('Closed', 'Cancelled'):
+            sets.append("closed_at = CURRENT_TIMESTAMP")
+        params.append(request_id)
+        conn.execute(
+            f"UPDATE external_lab_requests SET {', '.join(sets)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return True, None
+    finally:
+        conn.close()
+
+
+def record_lab_request_result(request_id, result, result_doc_url='', notes=None, user=None):
+    if result not in ('Pass', 'Fail', 'Pending'):
+        return False, "result must be Pass/Fail/Pending"
+    conn = get_connection()
+    try:
+        sets = ["result = ?", "status = ?", "updated_at = CURRENT_TIMESTAMP"]
+        new_status = 'Closed' if result in ('Pass', 'Fail') else 'Results Received'
+        params = [result, new_status]
+        if result_doc_url:
+            sets.append("result_doc_url = ?")
+            params.append(result_doc_url)
+        if notes is not None:
+            sets.append("notes = ?")
+            params.append(notes)
+        if new_status == 'Closed':
+            sets.append("closed_at = CURRENT_TIMESTAMP")
+        params.append(request_id)
+        conn.execute(
+            f"UPDATE external_lab_requests SET {', '.join(sets)} WHERE id = ?",
+            params
+        )
+        conn.commit()
+        return True, None
+    finally:
+        conn.close()
+
+
+def get_partner_stats(partner_id):
+    """Return dict of counts + avg turnaround for a partner."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT
+              SUM(CASE WHEN status IN ('Draft','Sample Shipped','In Testing','Results Received') THEN 1 ELSE 0 END) as active,
+              SUM(CASE WHEN status IN ('Sample Shipped','In Testing') THEN 1 ELSE 0 END) as awaiting,
+              SUM(CASE WHEN status = 'Closed'
+                       AND closed_at >= date('now','-30 days') THEN 1 ELSE 0 END) as completed_30d,
+              SUM(CASE WHEN status = 'Closed' AND result = 'Pass' THEN 1 ELSE 0 END) as passed,
+              SUM(CASE WHEN status = 'Closed' AND result = 'Fail' THEN 1 ELSE 0 END) as failed,
+              AVG(CASE WHEN status = 'Closed' AND sample_sent_date IS NOT NULL AND closed_at IS NOT NULL
+                       THEN julianday(closed_at) - julianday(sample_sent_date) END) as avg_turnaround_days
+           FROM external_lab_requests WHERE partner_id = ?""",
+        (partner_id,)
+    ).fetchone()
+    conn.close()
+    return {
+        'active': row['active'] or 0,
+        'awaiting': row['awaiting'] or 0,
+        'completed_30d': row['completed_30d'] or 0,
+        'passed': row['passed'] or 0,
+        'failed': row['failed'] or 0,
+        'avg_turnaround_days': round(row['avg_turnaround_days'], 1) if row['avg_turnaround_days'] else None,
+    }
+
+
+def get_open_lab_requests_for_batch(batch_id):
+    """Return open (not Closed/Cancelled) external lab requests for a batch.
+    Used to block batch release until external results arrive."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT r.*, pd.institution_name as partner_name
+           FROM external_lab_requests r
+           JOIN partners_directory pd ON r.partner_id = pd.id
+           WHERE r.batch_id = ?
+             AND r.status IN ('Draft','Sample Shipped','In Testing','Results Received')
+           ORDER BY r.created_at DESC""",
+        (batch_id,)
     ).fetchall()
     conn.close()
     return rows

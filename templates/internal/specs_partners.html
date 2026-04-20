@@ -163,26 +163,256 @@
         {% endfor %}
     </div>
 
-    <!-- ============ TAB 2: PARTNERS (unchanged) ============ -->
+    <!-- ============ TAB 2: LAB PARTNERS & EXTERNAL TESTING TRACKER ============ -->
     <div id="tab-partners" class="tab-panel">
-        <div class="card-grid" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
+
+        <!-- Tracker KPI row -->
+        <div class="elr-kpi-row">
+            <div class="elr-kpi"><div class="k-label">Total Requests</div><div class="k-val">{{ tracker_kpis.total_requests }}</div></div>
+            <div class="elr-kpi"><div class="k-label">Open</div><div class="k-val" style="color:#d2691e;">{{ tracker_kpis.open }}</div></div>
+            <div class="elr-kpi"><div class="k-label">Awaiting Results</div><div class="k-val" style="color:#b8860b;">{{ tracker_kpis.awaiting_results }}</div></div>
+            <div class="elr-kpi"><div class="k-label">Closed · Pass</div><div class="k-val" style="color:#27ae60;">{{ tracker_kpis.closed_pass }}</div></div>
+            <div class="elr-kpi"><div class="k-label">Closed · Fail</div><div class="k-val" style="color:#c0392b;">{{ tracker_kpis.closed_fail }}</div></div>
+        </div>
+
+        <!-- Partner directory with live stats -->
+        <h2 class="elr-section-heading">🏛️ Partner Directory</h2>
+        <div class="partner-grid">
             {% for p in partners %}
-            <div class="partner-card
+            <div class="partner-card-v2
                 {% if p.type == 'Standards Body' %}standards{% elif p.type == 'Research Laboratory' %}research{% elif p.type == 'Regulatory Authority' %}regulatory{% else %}testing{% endif %}">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <h3 style="color: #333; margin-bottom: 4px; font-size: 1.1rem;">{{ p.institution_name }}</h3>
-                    <span class="tag" style="background: rgba(0,0,0,0.05); color: #555;">{{ p.type }}</span>
+                <div class="pc-header">
+                    <div>
+                        <h3>{{ p.institution_name }}</h3>
+                        <span class="pc-type">{{ p.type }}</span>
+                    </div>
+                    {% if session.user.role in ['Quality Manager', 'Admin', 'Executive'] %}
+                    <button class="btn btn-primary btn-send-sample"
+                            data-partner-id="{{ p.id }}"
+                            data-partner-name="{{ p.institution_name|e }}"
+                            data-partner-standards="{{ p.standards|e }}"
+                            style="padding: 6px 12px; font-size: 0.78rem; white-space: nowrap;">
+                        📦 Send Sample
+                    </button>
+                    {% endif %}
                 </div>
-                <div style="font-size: 0.88rem; color: #555; line-height: 1.6; margin-top: 12px;">
-                    <strong>Standards:</strong> {{ p.standards }}<br>
-                    <strong>Contact:</strong> {{ p.contact_info }}<br>
-                    <strong>Notes:</strong> {{ p.notes }}
+                <div class="pc-body">
+                    <div class="pc-field"><span>Standards</span>{{ p.standards or '—' }}</div>
+                    <div class="pc-field"><span>Contact</span>{{ p.contact_info or '—' }}</div>
+                </div>
+                <div class="pc-stats">
+                    <div><span class="s-dot" style="background:#d2691e;"></span>Active: <b>{{ p.stats.active }}</b></div>
+                    <div><span class="s-dot" style="background:#b8860b;"></span>Awaiting: <b>{{ p.stats.awaiting }}</b></div>
+                    <div><span class="s-dot" style="background:#27ae60;"></span>Done (30d): <b>{{ p.stats.completed_30d }}</b></div>
+                    <div>⏱ Avg: <b>{% if p.stats.avg_turnaround_days %}{{ p.stats.avg_turnaround_days }}d{% else %}—{% endif %}</b></div>
                 </div>
             </div>
             {% else %}
             <div class="alert alert-info">No partners loaded. Run the seed script.</div>
             {% endfor %}
         </div>
+
+        <!-- Active requests tracker -->
+        <h2 class="elr-section-heading" style="margin-top: 32px;">📦 External Test Requests</h2>
+
+        <div class="elr-filter-bar">
+            <input type="text" id="elrSearch" class="form-control" placeholder="🔍 Filter by batch, partner, test..."
+                   style="padding: 7px 12px; font-size: 0.85rem; width: 280px;">
+            <div style="display:flex; gap:6px; flex-wrap: wrap;">
+                <button class="elr-pill active" data-elr-filter="ALL">All</button>
+                <button class="elr-pill" data-elr-filter="Sample Shipped">Shipped</button>
+                <button class="elr-pill" data-elr-filter="In Testing">In Testing</button>
+                <button class="elr-pill" data-elr-filter="Results Received">Results In</button>
+                <button class="elr-pill" data-elr-filter="Closed">Closed</button>
+            </div>
+        </div>
+
+        {% if lab_requests %}
+        <div class="cp-table-wrap" style="border: 1px solid #e1e8f0; border-radius: 10px; background:#fff; margin-top:14px;">
+            <table class="cp-table">
+                <thead>
+                    <tr>
+                        <th style="width: 120px;">ELR #</th>
+                        <th style="width: 130px;">Batch</th>
+                        <th>Partner</th>
+                        <th>Test</th>
+                        <th style="width: 110px;">Sent</th>
+                        <th style="width: 110px;">Expected</th>
+                        <th style="width: 140px;">Status</th>
+                        <th style="width: 90px;">Result</th>
+                        <th style="width: 130px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in lab_requests %}
+                    <tr class="elr-row"
+                        data-elr-id="{{ r.id }}"
+                        data-elr-status="{{ r.status }}"
+                        data-elr-search="{{ r.request_code|lower }} {{ r.batch_number|lower }} {{ r.partner_name|lower }} {{ r.test_type|lower }}">
+                        <td><code style="color:#0056b3; font-size:0.8rem;">{{ r.request_code }}</code></td>
+                        <td>
+                            <div style="font-weight:500;">{{ r.batch_number }}</div>
+                            <div style="color:#888; font-size:0.72rem;">{{ r.product_name }}</div>
+                        </td>
+                        <td>{{ r.partner_name }}</td>
+                        <td>
+                            <div>{{ r.test_type }}</div>
+                            {% if r.sample_qty %}<div style="color:#888; font-size:0.72rem;">Sample: {{ r.sample_qty }}</div>{% endif %}
+                        </td>
+                        <td style="font-size:0.8rem;">{{ r.sample_sent_date or '—' }}</td>
+                        <td style="font-size:0.8rem;">
+                            {{ r.expected_return_date or '—' }}
+                            {% if r.expected_return_date and r.status in ('Sample Shipped','In Testing') %}
+                            <div class="elr-due" data-due="{{ r.expected_return_date }}"></div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.status == 'Draft' %}<span class="elr-badge st-draft">Draft</span>
+                            {% elif r.status == 'Sample Shipped' %}<span class="elr-badge st-shipped">Shipped</span>
+                            {% elif r.status == 'In Testing' %}<span class="elr-badge st-testing">In Testing</span>
+                            {% elif r.status == 'Results Received' %}<span class="elr-badge st-received">Results In</span>
+                            {% elif r.status == 'Closed' %}<span class="elr-badge st-closed">Closed</span>
+                            {% elif r.status == 'Cancelled' %}<span class="elr-badge st-cancel">Cancelled</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if r.result == 'Pass' %}<span class="elr-badge res-pass">✓ Pass</span>
+                            {% elif r.result == 'Fail' %}<span class="elr-badge res-fail">✗ Fail</span>
+                            {% else %}<span style="color:#bbb;">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if r.status == 'Draft' %}
+                                <button class="action-btn elr-advance" data-target="Sample Shipped" title="Mark as shipped">🚚 Ship</button>
+                            {% elif r.status == 'Sample Shipped' %}
+                                <button class="action-btn elr-advance" data-target="In Testing" title="Lab has started testing">🧪 Testing</button>
+                            {% elif r.status == 'In Testing' %}
+                                <button class="action-btn elr-upload" title="Upload result / COA">📄 Result</button>
+                            {% elif r.status == 'Results Received' %}
+                                <button class="action-btn elr-upload" title="Finalize result">✅ Close</button>
+                            {% endif %}
+                            {% if r.result_doc_url %}
+                            <a class="action-btn" href="{{ r.result_doc_url }}" target="_blank" title="View certificate">📎</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info" style="margin-top: 14px;">
+            No external lab requests yet. Click <strong>📦 Send Sample</strong> on a partner card to create one.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ============ MODAL: SEND SAMPLE TO EXTERNAL LAB ============ -->
+<div id="sendSampleModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-body" style="max-width: 620px;">
+        <h3 style="margin:0 0 6px;">📦 Send Sample to External Lab</h3>
+        <p id="ssPartnerName" style="color:#666; font-size: 0.85rem; margin: 0 0 4px;"></p>
+        <p id="ssPartnerStandards" style="color:#888; font-size: 0.75rem; margin: 0 0 18px;"></p>
+
+        <form id="sendSampleForm">
+            <input type="hidden" id="ssPartnerId">
+
+            <div class="form-group">
+                <label>Batch <span style="color:#c0392b;">*</span></label>
+                <select id="ssBatchId" class="form-control" required>
+                    <option value="">— select a batch —</option>
+                    {% for b in eligible_batches %}
+                    <option value="{{ b.id }}">{{ b.batch_number }} — {{ b.product_name }} ({{ b.status }})</option>
+                    {% endfor %}
+                </select>
+                <div style="color:#888; font-size:0.72rem; margin-top:4px;">
+                    Only In-Progress and Pending-Release batches are eligible for external FQC testing.
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Test type <span style="color:#c0392b;">*</span></label>
+                <input type="text" id="ssTestType" class="form-control" required
+                       placeholder="e.g. HPLC Assay, Blister Seal Integrity, Transit Compression">
+                <div style="color:#888; font-size:0.72rem; margin-top:4px;" id="ssTestHint"></div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Sample qty / description</label>
+                    <input type="text" id="ssSampleQty" class="form-control" placeholder="e.g. 30 tablets">
+                </div>
+                <div class="form-group">
+                    <label>Tracking reference</label>
+                    <input type="text" id="ssTracking" class="form-control" placeholder="Courier #">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Sample sent date</label>
+                    <input type="date" id="ssSentDate" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Expected return date</label>
+                    <input type="date" id="ssExpectedDate" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Est. cost (₺)</label>
+                    <input type="number" id="ssCost" class="form-control" step="0.01" min="0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="ssNotes" class="form-control" rows="2"
+                          placeholder="Sample handling instructions, special conditions…"></textarea>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top: 18px;">
+                <button type="button" class="btn btn-secondary" onclick="closeSendSample()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ============ MODAL: UPLOAD RESULT / CLOSE REQUEST ============ -->
+<div id="resultModal" class="modal-backdrop" style="display:none;">
+    <div class="modal-body" style="max-width: 560px;">
+        <h3 style="margin:0 0 6px;">📄 Record Test Result</h3>
+        <p id="resReqCode" style="color:#666; font-size: 0.85rem; margin: 0 0 18px;"></p>
+
+        <form id="resultForm" enctype="multipart/form-data">
+            <input type="hidden" id="resReqId">
+
+            <div class="form-group">
+                <label>Result <span style="color:#c0392b;">*</span></label>
+                <div style="display:flex; gap:8px;">
+                    <label class="res-radio"><input type="radio" name="result" value="Pass" required> ✓ Pass</label>
+                    <label class="res-radio"><input type="radio" name="result" value="Fail"> ✗ Fail</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Certificate of Analysis / result doc (PDF, PNG, JPG)</label>
+                <input type="file" name="result_doc" class="form-control" accept=".pdf,.png,.jpg,.jpeg">
+            </div>
+
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea name="notes" class="form-control" rows="2"
+                          placeholder="Summary of findings, out-of-spec parameters, next steps…"></textarea>
+            </div>
+
+            <div style="background:#fff8e6; border-left: 3px solid #d2691e; padding: 10px 14px; border-radius: 6px; font-size:0.82rem; color:#555; margin: 12px 0;">
+                ⚠ A <strong>Fail</strong> result blocks the associated batch from release until a CAPA is logged.
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top: 18px;">
+                <button type="button" class="btn btn-secondary" onclick="closeResult()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Result</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -426,6 +656,94 @@
     max-width: 500px; width: 92%; max-height: 90vh; overflow-y: auto;
     box-shadow: 0 10px 40px rgba(0,0,0,0.2);
 }
+
+/* ───── External Lab Tracker styles ───── */
+.elr-kpi-row {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 18px 0 22px;
+}
+.elr-kpi {
+    background: #fff; border: 1px solid #e1e8f0; border-radius: 10px; padding: 14px 16px;
+}
+.elr-kpi .k-label {
+    font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 0.6px;
+}
+.elr-kpi .k-val {
+    font-size: 1.6rem; font-weight: 600; color: #0056b3; margin-top: 4px;
+}
+.elr-section-heading {
+    font-size: 1.05rem; color: #333; margin: 0 0 14px; padding-bottom: 8px;
+    border-bottom: 2px solid #e1e8f0;
+}
+.partner-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 14px;
+}
+.partner-card-v2 {
+    background: #fff; border: 1px solid #e1e8f0; border-radius: 10px;
+    padding: 16px 18px; border-left: 4px solid #0056b3;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.partner-card-v2.standards   { border-left-color: #8e44ad; }
+.partner-card-v2.research    { border-left-color: #2980b9; }
+.partner-card-v2.regulatory  { border-left-color: #c0392b; }
+.partner-card-v2.testing     { border-left-color: #27ae60; }
+.partner-card-v2 .pc-header {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+}
+.partner-card-v2 .pc-header h3 {
+    margin: 0 0 4px; font-size: 1rem; color: #222;
+}
+.pc-type {
+    background: #f1f5fb; color: #0056b3; padding: 2px 8px; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 500;
+}
+.pc-body { font-size: 0.82rem; color: #555; line-height: 1.55; }
+.pc-field span {
+    display: inline-block; min-width: 72px; color: #888; font-weight: 500; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.4px;
+}
+.pc-stats {
+    display: flex; gap: 16px; flex-wrap: wrap; padding-top: 10px;
+    border-top: 1px dashed #e1e8f0; font-size: 0.78rem; color: #555;
+}
+.pc-stats .s-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px;
+}
+
+.elr-filter-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.elr-pill {
+    background: #fff; border: 1px solid #d5dce6; color: #555;
+    padding: 5px 12px; border-radius: 16px; font-size: 0.78rem; cursor: pointer;
+}
+.elr-pill:hover { background: #f1f5fb; }
+.elr-pill.active { background: #0056b3; border-color: #0056b3; color: #fff; }
+
+.elr-badge {
+    display: inline-block; padding: 2px 9px; border-radius: 10px;
+    font-size: 0.72rem; font-weight: 600;
+}
+.st-draft    { background: #eee; color: #666; }
+.st-shipped  { background: #e6f2ff; color: #0056b3; }
+.st-testing  { background: #fff4e6; color: #d2691e; }
+.st-received { background: #fff8d6; color: #b8860b; }
+.st-closed   { background: #eaf7ee; color: #27ae60; }
+.st-cancel   { background: #fee; color: #999; text-decoration: line-through; }
+.res-pass    { background: #eaf7ee; color: #27ae60; }
+.res-fail    { background: #fee; color: #c0392b; }
+
+.elr-due { font-size: 0.7rem; margin-top: 2px; }
+.elr-due.overdue { color: #c0392b; font-weight: 600; }
+.elr-due.soon    { color: #d2691e; }
+.elr-due.ok      { color: #888; }
+
+.res-radio {
+    flex: 1; padding: 10px 12px; border: 1px solid #d5dce6; border-radius: 8px;
+    cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.9rem;
+}
+.res-radio:has(input:checked) { border-color: #0056b3; background: #f1f5fb; }
 </style>
 
 {% endblock %}
@@ -583,8 +901,146 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.closeHistory = () => { historyModal.style.display = 'none'; };
 
+    // ═══════════════════════════════════════════════════════════
+    // External Lab Tracker — Send Sample / Status / Result
+    // ═══════════════════════════════════════════════════════════
+    const sendModal = document.getElementById('sendSampleModal');
+    const resultModal = document.getElementById('resultModal');
+
+    // Due-date colouring for expected return dates
+    const today = new Date(); today.setHours(0,0,0,0);
+    document.querySelectorAll('.elr-due').forEach(el => {
+        const due = new Date(el.dataset.due);
+        if (isNaN(due)) return;
+        const diffDays = Math.round((due - today) / 86400000);
+        if (diffDays < 0) {
+            el.classList.add('overdue');
+            el.textContent = `${-diffDays}d overdue`;
+        } else if (diffDays <= 2) {
+            el.classList.add('soon');
+            el.textContent = `due in ${diffDays}d`;
+        } else {
+            el.classList.add('ok');
+            el.textContent = `${diffDays}d left`;
+        }
+    });
+
+    // Send Sample modal — open from partner card
+    document.querySelectorAll('.btn-send-sample').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('ssPartnerId').value = btn.dataset.partnerId;
+            document.getElementById('ssPartnerName').textContent = '→ ' + btn.dataset.partnerName;
+            document.getElementById('ssPartnerStandards').textContent = 'Services: ' + (btn.dataset.partnerStandards || '—');
+            document.getElementById('sendSampleForm').reset();
+            sendModal.style.display = 'flex';
+        });
+    });
+    window.closeSendSample = () => { sendModal.style.display = 'none'; };
+
+    document.getElementById('sendSampleForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            partner_id: parseInt(document.getElementById('ssPartnerId').value, 10),
+            batch_id: parseInt(document.getElementById('ssBatchId').value, 10),
+            test_type: document.getElementById('ssTestType').value.trim(),
+            sample_qty: document.getElementById('ssSampleQty').value.trim(),
+            tracking_ref: document.getElementById('ssTracking').value.trim(),
+            sample_sent_date: document.getElementById('ssSentDate').value || null,
+            expected_return_date: document.getElementById('ssExpectedDate').value || null,
+            cost: parseFloat(document.getElementById('ssCost').value) || null,
+            notes: document.getElementById('ssNotes').value.trim(),
+        };
+        const res = await fetch('/api/lab-requests', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (json.status === 'ok') {
+            alert(`Created ${json.request_code}`);
+            location.reload();
+        } else {
+            alert('Failed: ' + (json.error || 'Unknown error'));
+        }
+    });
+
+    // Advance status buttons (Ship / In Testing)
+    document.querySelectorAll('.elr-advance').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const row = btn.closest('.elr-row');
+            const reqId = row.dataset.elrId;
+            const target = btn.dataset.target;
+            const payload = { status: target };
+            if (target === 'Sample Shipped') {
+                const today = new Date().toISOString().slice(0, 10);
+                payload.sample_sent_date = today;
+            }
+            const res = await fetch(`/api/lab-requests/${reqId}/status`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const json = await res.json();
+            if (json.status === 'ok') location.reload();
+            else alert('Failed: ' + (json.error || 'Unknown'));
+        });
+    });
+
+    // Upload result modal
+    document.querySelectorAll('.elr-upload').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const row = btn.closest('.elr-row');
+            const code = row.querySelector('code').textContent;
+            document.getElementById('resReqId').value = row.dataset.elrId;
+            document.getElementById('resReqCode').textContent = 'Request: ' + code;
+            document.getElementById('resultForm').reset();
+            resultModal.style.display = 'flex';
+        });
+    });
+    window.closeResult = () => { resultModal.style.display = 'none'; };
+
+    document.getElementById('resultForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const reqId = document.getElementById('resReqId').value;
+        const fd = new FormData(e.target);
+        const res = await fetch(`/api/lab-requests/${reqId}/result`, {
+            method: 'POST', body: fd,
+        });
+        const json = await res.json();
+        if (json.status === 'ok') location.reload();
+        else alert('Failed: ' + (json.error || 'Unknown'));
+    });
+
+    // Tracker filter pills + search
+    const elrRows = document.querySelectorAll('.elr-row');
+    let elrFilter = 'ALL';
+    let elrSearch = '';
+    const applyElrFilters = () => {
+        elrRows.forEach(row => {
+            const statusOk = (elrFilter === 'ALL' || row.dataset.elrStatus === elrFilter);
+            const searchOk = (!elrSearch || (row.dataset.elrSearch || '').includes(elrSearch));
+            row.style.display = (statusOk && searchOk) ? '' : 'none';
+        });
+    };
+    document.querySelectorAll('.elr-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            document.querySelectorAll('.elr-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            elrFilter = pill.dataset.elrFilter;
+            applyElrFilters();
+        });
+    });
+    const elrSearchInput = document.getElementById('elrSearch');
+    if (elrSearchInput) {
+        elrSearchInput.addEventListener('input', (e) => {
+            elrSearch = e.target.value.toLowerCase().trim();
+            applyElrFilters();
+        });
+    }
+
     // Close modals on backdrop click
-    [editModal, addModal, historyModal].forEach(m => {
+    [editModal, addModal, historyModal, sendModal, resultModal].forEach(m => {
+        if (!m) return;
         m.addEventListener('click', (e) => {
             if (e.target === m) m.style.display = 'none';
         });

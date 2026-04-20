@@ -31,6 +31,11 @@ from data.db_manager import (
     # Stage checkpoint library
     get_stage_library, update_stage_checkpoint_field, insert_custom_stage_checkpoint,
     deactivate_stage_checkpoint, get_checkpoint_audit_log, EDITABLE_CHECKPOINT_FIELDS,
+    # External lab tracker
+    insert_lab_request, get_all_lab_requests, get_lab_request,
+    update_lab_request_status, record_lab_request_result,
+    get_partner_stats, get_open_lab_requests_for_batch,
+    LAB_REQUEST_STATUSES,
 )
 from data.aql_tables import get_aql_sample_size, get_available_aql_values, get_available_inspection_levels
 from services.groq_ai import categorize_and_analyze
@@ -271,17 +276,126 @@ def specs():
     """Stage Checkpoint Library — the GMP master spec page."""
     library = get_stage_library()
     partners_data = get_all_partners()
+    # Enrich partners with live tracker stats
+    partners_enriched = []
+    for p in partners_data:
+        stats = get_partner_stats(p['id'])
+        partners_enriched.append({**dict(p), 'stats': stats})
+    lab_requests = get_all_lab_requests()
+    # Eligible batches for external FQC (In-Progress or Pending-Release)
+    eligible_batches = [b for b in get_all_batches()
+                        if b['status'] in ('In-Progress', 'Pending-Release')]
     # Stats for the header
     total_checkpoints = sum(len(st['checkpoints']) for layer in library for st in layer['stages'])
     total_stages = sum(len(layer['stages']) for layer in library)
+    # Tracker KPIs
+    tracker_kpis = {
+        'total_requests': len(lab_requests),
+        'open': sum(1 for r in lab_requests if r['status'] in ('Draft','Sample Shipped','In Testing','Results Received')),
+        'awaiting_results': sum(1 for r in lab_requests if r['status'] in ('Sample Shipped','In Testing')),
+        'closed_pass': sum(1 for r in lab_requests if r['status']=='Closed' and r['result']=='Pass'),
+        'closed_fail': sum(1 for r in lab_requests if r['status']=='Closed' and r['result']=='Fail'),
+    }
     return render_template(
         'internal/specs_partners.html',
         library=library,
-        partners=partners_data,
+        partners=partners_enriched,
+        lab_requests=lab_requests,
+        eligible_batches=eligible_batches,
+        tracker_kpis=tracker_kpis,
         total_checkpoints=total_checkpoints,
         total_stages=total_stages,
         defect_types=['Critical', 'Major', 'Minor', 'Informational'],
     )
+
+
+# ─── External Lab Tracker API ────────────────────────────────────────────
+@app.route('/api/lab-requests', methods=['POST'])
+@login_required
+def api_create_lab_request():
+    if session['user']['role'] not in ('Quality Manager', 'Admin', 'Executive'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    data = request.get_json() or {}
+    try:
+        batch_id = int(data.get('batch_id'))
+        partner_id = int(data.get('partner_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'batch_id and partner_id required'}), 400
+    test_type = (data.get('test_type') or '').strip()
+    if not test_type:
+        return jsonify({'error': 'test_type required'}), 400
+    # Sanity: batch must exist
+    if not get_batch(batch_id):
+        return jsonify({'error': 'Batch not found'}), 404
+    code = insert_lab_request(
+        batch_id=batch_id,
+        partner_id=partner_id,
+        test_type=test_type,
+        created_by=session['user']['full_name'],
+        sample_qty=(data.get('sample_qty') or '').strip(),
+        sample_sent_date=data.get('sample_sent_date') or None,
+        expected_return_date=data.get('expected_return_date') or None,
+        tracking_ref=(data.get('tracking_ref') or '').strip(),
+        cost=data.get('cost'),
+        notes=(data.get('notes') or '').strip(),
+    )
+    return jsonify({'status': 'ok', 'request_code': code})
+
+
+@app.route('/api/lab-requests/<int:req_id>/status', methods=['POST'])
+@login_required
+def api_update_lab_request_status(req_id):
+    if session['user']['role'] not in ('Quality Manager', 'Admin', 'Executive'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    data = request.get_json() or {}
+    status = data.get('status')
+    ok, err = update_lab_request_status(
+        req_id, status, session['user']['full_name'],
+        tracking_ref=data.get('tracking_ref'),
+        sample_sent_date=data.get('sample_sent_date'),
+    )
+    if not ok:
+        return jsonify({'error': err}), 400
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/lab-requests/<int:req_id>/result', methods=['POST'])
+@login_required
+def api_upload_lab_result(req_id):
+    if session['user']['role'] not in ('Quality Manager', 'Admin', 'Executive'):
+        return jsonify({'error': 'Unauthorized'}), 403
+    result = request.form.get('result') or (request.get_json() or {}).get('result')
+    notes = request.form.get('notes')
+    doc_url = ''
+    # Optional COA / result certificate upload
+    if 'result_doc' in request.files:
+        f = request.files['result_doc']
+        if f and f.filename:
+            ext = f.filename.rsplit('.', 1)[-1].lower()
+            if ext in {'pdf', 'png', 'jpg', 'jpeg'}:
+                upload_dir = os.path.join(app.static_folder, 'uploads', 'lab_results')
+                os.makedirs(upload_dir, exist_ok=True)
+                filename = f"elr_{req_id}_result.{ext}"
+                f.save(os.path.join(upload_dir, filename))
+                doc_url = f"/static/uploads/lab_results/{filename}"
+            else:
+                return jsonify({'error': 'Only PDF, PNG, JPG allowed'}), 400
+    ok, err = record_lab_request_result(
+        req_id, result=result, result_doc_url=doc_url, notes=notes,
+        user=session['user']['full_name']
+    )
+    if not ok:
+        return jsonify({'error': err}), 400
+    return jsonify({'status': 'ok', 'doc_url': doc_url})
+
+
+@app.route('/api/lab-requests/<int:req_id>', methods=['GET'])
+@login_required
+def api_get_lab_request(req_id):
+    r = get_lab_request(req_id)
+    if not r:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(dict(r))
 
 @app.route('/portal/capa', methods=['GET', 'POST'])
 @login_required
@@ -1293,6 +1407,14 @@ def api_release_batch(batch_id):
     batch = get_batch(batch_id)
     if not batch or batch['status'] != 'Pending-Release':
         return jsonify({'error': 'Batch must be in Pending-Release status'}), 400
+    # Block release if any external lab tests are still open
+    open_reqs = get_open_lab_requests_for_batch(batch_id)
+    if open_reqs:
+        codes = ', '.join(r['request_code'] for r in open_reqs)
+        return jsonify({
+            'error': f'Cannot release: {len(open_reqs)} external lab test(s) still open ({codes}). '
+                     'Close all external requests first.'
+        }), 400
     update_batch_status(batch_id, 'Released', released_by=session['user']['full_name'])
     return jsonify({'status': 'ok'})
 
